@@ -1,0 +1,3 @@
+suite/nand2tetris/*
+!suite/nand2tetris/projects
+.DS_Store
