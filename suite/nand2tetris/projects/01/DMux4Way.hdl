@@ -13,6 +13,13 @@ CHIP DMux4Way {
     IN in, sel[2];
     OUT a, b, c, d;
 
+    // for:
+    // | in  | sel  |  a  |  b  |  c  |  d  |
+    // |  1  |  01  |  0  |  1  |  0  |  0  |
+
     PARTS:
-    //// Replace this comment with your code.
+    DMux(in=in, sel=sel[1], a=a0, b=b0); // a0=1, b0=0
+
+    DMux(in=a0, sel=sel[0], a=a, b=b);   // a=0, b=1
+    DMux(in=b0, sel=sel[0], a=c, b=d);   // c=0, d=0
 }
