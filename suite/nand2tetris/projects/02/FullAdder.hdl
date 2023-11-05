@@ -10,6 +10,24 @@ CHIP FullAdder {
     OUT sum,     // Right bit of a + b + c
         carry;   // Left bit of a + b + c
 
+    // c: 1
+    // b: 1
+    // a: 1
+    // --
+    // (a + b): 0, carry: 1
+    // (0 + c): 1, carry: 1
+    // sum: 1, carry: 1
+
+    // c: 0
+    // b: 1
+    // a: 1
+    // --
+    // (a + b): 0, carry: 1
+    // (0 + c): 0, carry: 1
+    // sum: 0, carry: 1
+
     PARTS:
-    //// Replace this comment with your code.
+    HalfAdder(a=a, b=b, sum=sum0, carry=carry0);
+    HalfAdder(a=c, b=sum0, sum=sum, carry=carry1);
+    Or(a=carry0, b=carry1, out=carry);
 }
