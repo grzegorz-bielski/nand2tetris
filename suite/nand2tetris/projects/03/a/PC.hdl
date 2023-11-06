@@ -15,5 +15,16 @@ CHIP PC {
     OUT out[16];
 
     PARTS:
-    //// Replace this comment with your code.
+
+
+    // oepration precedence: reset, load, increment
+    Inc16(in=incout, out=ininc);
+    Mux16(a=in, b=ininc, sel=inc, out=in0);            // increment
+    Mux16(a=in0, b=in, sel=load, out=in1);             // load
+    Mux16(a=in1, b[0..15]=false, sel=reset, out=in2);  // reset 
+
+    Or(a=reset, b=load, out=changestate0);
+    Or(a=changestate0, b=inc, out=changestate1);
+
+    Register(in=in2, load=changestate1, out=out, out=incout);
 }
