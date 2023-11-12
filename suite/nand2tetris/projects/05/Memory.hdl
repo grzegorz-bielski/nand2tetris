@@ -19,5 +19,34 @@ CHIP Memory {
     OUT out[16];
 
     PARTS:
-    //// Replace this comment with your code.
+
+    // load from main memory, or load from screen or keyboard (discarded, since it's read-only) 
+    DMux(in=load, sel=address[14], a=loada, b=loadb);
+
+    RAM16K(in=in, load=loada, address=address[0..13], out=outa);
+    Screen(in=in, load=loadb, address=address[0..12], out=outb);
+    Keyboard(out=outc);
+
+    Mux4Way16(  
+        a=outa, // sel: 00
+        b=outa, // sel: 01
+        c=outb, // sel: 10
+        d=outc, // sel: 11
+        sel=address[13..14], 
+        out=out
+    );
+
+    // RAM      //    0 - 3FFF // 0     - 16383
+    // Screen   // 4000 - 5FFF // 16384 - 24575
+    // Keyboard // 6000        // 24576
+
+    // 000 0000 0000 0000 - RAM A start
+    // 011 1111 1111 1111 - RAM A end   - last 0 on [14] place
+
+    // 100 0000 0000 0000 - Screen A start
+    // 101 1111 1111 1111 - Screen A end
+
+    // 110 0000 0000 0000 - Keyboard A  - 11 on [14, 13] selects keyboard output
+
+
 }
