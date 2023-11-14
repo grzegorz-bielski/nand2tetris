@@ -13,7 +13,7 @@ CHIP Mux4Way16 {
     IN a[16], b[16], c[16], d[16], sel[2];
     OUT out[16];
 
-    // bit arrays are indexed from right to left (little endian)
+    // bit arrays are indexed from right to left (like little endian in byte ordering)
     // 01: [0] = 1, [1] = 0
 
     // for:

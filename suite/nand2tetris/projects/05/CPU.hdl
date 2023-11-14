@@ -32,5 +32,109 @@ CHIP CPU {
         pc[15];          // Address of next instruction
 
     PARTS:
-    //// Replace this comment with your code.
+
+    // C instruction: 1xxaccccccdddjjj - micro codes description at fig 4.5. page 124
+
+    // A register in mux
+    // a= C instruction
+    // b= ALU output
+    // sel= c
+    // out= A register
+    Mux16(a=instruction, b=aluout, sel=instruction[15], out=aregin);
+
+    // A register
+    // in= A register in mux
+    // load=c
+    // out= ALU in Mux
+    // out= addressM
+
+    // load A if A instruction is used or C instruction with A dest
+    Not(in=instruction[15], out=noti);
+    Or(a=noti, b=instruction[5], out=loada);
+    ARegister(
+        in=aregin, 
+        load=loada, 
+        out=rega, 
+        out[0..14]=addressM  // strip out the last control bit
+    );
+
+    // ALU in Mux
+    // a= inM
+    // b= A register out
+    // sel= c
+    // out = ALU in
+
+    // [15] - is C instruction, [12] - `a`, use A or M in comparison
+    And(a=instruction[15], b=instruction[12], out=loadaorm);
+    Mux16(a=rega, b=inM, sel=loadaorm, out=aluInMorA);
+
+    // D register
+    // in= ALU output
+    // load= c
+    // out= ALU in
+
+    // [15] - is C instruction, [4] - store in D
+    And(a=instruction[15], b=instruction[4], out=loadd);
+    DRegister(in=aluout, load=loadd, out=aluinD);
+
+    ALU(
+        x=aluinD, y=aluInMorA, 
+        zx=instruction[11], nx=instruction[10], zy=instruction[9], ny=instruction[8], f=instruction[7], no=instruction[6], // comp C instruction op codes
+        out=aluout,
+        out=outM, 
+        zr=zr, // (out == 0, 1, 0)
+        ng=ng  // (out < 0,  1, 0)
+    );
+
+    And(a=instruction[15],b=instruction[3],out=writeM);
+
+    // should jump to A - depends on jjj bits of C instruction and zr && ng
+    Not(in=ng, out=nng);
+    Not(in=zr, out=nzr);
+
+    // jgt
+    And(a=instruction[15], b=instruction[0], out=jgt);
+    And(a=nng, b=nzr, out=jgteval);
+    And(a=jgt, b=jgteval, out=jump0);
+
+    // jeq
+    And(a=instruction[15], b=instruction[1], out=jeq);
+    And(a=zr, b=jeq, out=jump1);
+
+    // jge = jgt or jeq
+    And(a=jgt, b=jeq, out=jge);
+    Or(a=jgteval, b=zr, out=jgeeval);
+    And(a=jge, b=jgeeval, out=jump2);
+
+    // jlt
+    And(a=instruction[15], b=instruction[2], out=jlt);
+    And(a=ng, b=jlt, out=jump3);
+
+    // jne
+    And(a=jgt, b=jlt, out=jne);
+    And(a=jne, b=nzr, out=jump4);
+
+    // jle
+    And(a=jeq, b=jlt, out=jle);
+    Or(a=ng, b=zr, out=jleeval);
+    And(a=jle, b=jleeval, out=jump5);
+
+    // unconditional jump
+    And(a=jgt, b=jeq, out=ucond0);
+    And(a=ucond0, b=jlt, out=jump6);
+    
+    Or(a=jump0, b=jump1, out=out0);
+    Or(a=out0, b=jump2, out=out1);
+    Or(a=out1, b=jump3, out=out2);
+    Or(a=out2, b=jump4, out=out3);
+    Or(a=out3, b=jump5, out=out4);
+    Or(a=out4, b=jump6, out=pcload);
+
+    // reset=reset
+    // load=if jump
+    // inc=true
+    // in= A register out
+    // out=pc
+    PC(in=rega, load=pcload, inc=true, reset=reset, out[0..14]=pc); // strip out the last control bit
+
 }
