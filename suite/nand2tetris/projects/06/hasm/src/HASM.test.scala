@@ -19,7 +19,7 @@ class HASMSpec extends munit.FunSuite:
       expectedAt(root / "rect" / "RectL.hack")
     )
 
-     assertEquals(
+    assertEquals(
       assembleAt(root / "pong" / "PongL.asm"),
       expectedAt(root / "pong" / "PongL.hack")
     )

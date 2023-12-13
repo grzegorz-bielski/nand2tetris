@@ -1,3 +1,5 @@
+# nand2tetris suite programs
+
 hsim:
     ./suite/nand2tetris/tools/HardwareSimulator.sh
 cpu-emu:
@@ -9,5 +11,10 @@ vm:
 jackc:
     ./suite/nand2tetris/tools/JackCompiler.sh
 
-hackasm:
-    scala-cli run ./suite/nand2tetris/projects/06/hasm/Main.scala
+# executable projects
+
+hasm:
+    scala-cli run ./suite/nand2tetris/projects/06/hasm/src/
+
+hvm:
+    scala-cli run ./suite/nand2tetris/projects/07/hvm/src/

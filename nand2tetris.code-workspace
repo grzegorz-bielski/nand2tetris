@@ -1,0 +1,21 @@
+{
+	"folders": [
+		{
+			"name": "root",
+			"path": "."
+		},
+		{
+			"name": "hasm",
+			"path": "suite/nand2tetris/projects/06/hasm"
+		},
+		{
+			"name": "hvm",
+			"path": "suite/nand2tetris/projects/07/hvm"
+		}
+	],
+	"settings": {
+		"files.watcherExclude": {
+			"**/target": true
+		}
+	}
+}
