@@ -4,7 +4,7 @@
 
 package hasm
 
-// scala-cli ./hasm/src -- $(pwd)/add/Add $(pwd)/add/kek
+// scala-cli ./hasm -- $(pwd)/add/Add $(pwd)/add/kek
 
 @main
 def run(source: String, dest: String): Unit =

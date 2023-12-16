@@ -10,7 +10,7 @@ object Parser:
   def parseAll(sourceFile: os.Path): Vector[Result] =
     os.read
       .lines(sourceFile)
-      .map(Parser.parseLine)
+      .map(parseLine)
       .toVector
 
   def parseLine(line: String): Result =

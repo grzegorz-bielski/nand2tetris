@@ -16,6 +16,9 @@
 	"settings": {
 		"files.watcherExclude": {
 			"**/target": true
-		}
+		},
+		"cSpell.words": [
+			"HASM"
+		]
 	}
 }

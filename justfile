@@ -14,7 +14,7 @@ jackc:
 # executable projects
 
 hasm:
-    scala-cli run ./suite/nand2tetris/projects/06/hasm/src/
+    scala-cli run ./suite/nand2tetris/projects/06/hasm/
 
 hvm:
-    scala-cli run ./suite/nand2tetris/projects/07/hvm/src/
+    scala-cli run ./suite/nand2tetris/projects/07/hvm/
