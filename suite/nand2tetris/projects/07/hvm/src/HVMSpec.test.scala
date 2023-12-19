@@ -1,32 +1,30 @@
 package hvm
 
-class HVMSpec extends munit.FunSuite:
+class HVMSpec extends HVMSuite:
   test("should translate programs to the Hack assembly correctly"):
-    val root = os.pwd / os.up / os.up
-
     assertEquals(
-      translateAt(root / "MemoryAccess" / "BasicTest" / "BasicTest.vm"),
-      expectedAt(root / "MemoryAccess" / "BasicTest" / "BasicTest.asm")
+      translateAt(`07` / "MemoryAccess" / "BasicTest" / "BasicTest.vm"),
+      expectedAt(`07` / "MemoryAccess" / "BasicTest" / "BasicTest.asm")
     )
 
     assertEquals(
-      translateAt(root / "MemoryAccess" / "PointerTest" / "PointerTest.vm"),
-      expectedAt(root / "MemoryAccess" / "PointerTest" / "PointerTest.asm")
+      translateAt(`07` / "MemoryAccess" / "PointerTest" / "PointerTest.vm"),
+      expectedAt(`07` / "MemoryAccess" / "PointerTest" / "PointerTest.asm")
     )
 
     assertEquals(
-      translateAt(root / "MemoryAccess" / "StaticTest" / "StaticTest.vm"),
-      expectedAt(root / "MemoryAccess" / "StaticTest" / "StaticTest.asm")
+      translateAt(`07` / "MemoryAccess" / "StaticTest" / "StaticTest.vm"),
+      expectedAt(`07` / "MemoryAccess" / "StaticTest" / "StaticTest.asm")
     )
 
     assertEquals(
-      translateAt(root / "StackArithmetic" / "SimpleAdd" / "SimpleAdd.vm"),
-      expectedAt(root / "StackArithmetic" / "SimpleAdd" / "SimpleAdd.asm")
+      translateAt(`07` / "StackArithmetic" / "SimpleAdd" / "SimpleAdd.vm"),
+      expectedAt(`07` / "StackArithmetic" / "SimpleAdd" / "SimpleAdd.asm")
     )
 
     assertEquals(
-      translateAt(root / "StackArithmetic" / "StackTest" / "StackTest.vm"),
-      expectedAt(root / "StackArithmetic" / "StackTest" / "StackTest.asm")
+      translateAt(`07` / "StackArithmetic" / "StackTest" / "StackTest.vm"),
+      expectedAt(`07` / "StackArithmetic" / "StackTest" / "StackTest.asm")
     )
 
   def translateAt(path: os.Path) =
