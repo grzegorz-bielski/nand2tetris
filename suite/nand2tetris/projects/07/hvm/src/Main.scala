@@ -53,7 +53,7 @@ enum Error:
 object Parser:
   type Result = Command | Error | Null
 
-  // regex for three groups: command, arg1, arg2
+  // regex for three groups: command, arg1?, arg2?
   private val commandRegex = """^(\S+)(\s\S+)?(\s\S+)?$""".r
 
   private val arithmeticCommands = Set("add", "sub", "neg", "eq", "gt", "lt", "and", "or", "not")
@@ -68,13 +68,11 @@ object Parser:
 
   def parseLine(line: String): Result =
     lazy val invalidCmd = Error.InvalidCommand(line)
+    lazy val withIntArg: String => (Int => Result) => Result = _.toIntOption.fold(invalidCmd)
 
     line.trim.nn match
       case line if line.isEmpty() || line.startsWith("//") => null
       case commandRegex(command, arg0, arg1) =>
-        def withIntArg(arg: String): (Int => Result) => Result =
-          arg.toIntOption.fold(invalidCmd)
-
         (command, Option(arg0).map(_.trim.nn), Option(arg1).map(_.trim.nn)) match
           case (cmd, _, _) if arithmeticCommands(cmd) => Command.Arithmetic(cmd)
           case ("label", Some(arg0), _)               => Command.Label(arg0)
@@ -86,58 +84,45 @@ object Parser:
           case ("function", Some(arg0), Some(arg1))   => withIntArg(arg1)(Command.Function(arg0, _))
           case ("call", Some(arg0), Some(arg1))       => withIntArg(arg1)(Command.Call(arg0, _))
           case _                                      => invalidCmd
-      case _ => invalidCmd
+      case _: String => invalidCmd
 
 object HASMWriter:
   type Result = String | Error
 
-  def writeCmd(cmd: Command, fileName: String, lineNr: Int): Result =
+  def writeCmd(cmd: Command, fileName: String, line: Int): Result =
     cmd match
-      case Command.Arithmetic(name)   => IntegerArithmetic.all(name, lineNr)
-      case Command.Push(segment, pos) => StackArithmetic.push(segment, pos, fileName)
-      case Command.Pop(segment, pos)  => StackArithmetic.pop(segment, pos, fileName)
+      case Command.Arithmetic(name)   => IntegerArithmetic.from(name, fileName, line)
+      case Command.Push(segment, pos) => StackArithmetic.run(StackArithmetic.Mode.Push, segment, pos, fileName)
+      case Command.Pop(segment, pos)  => StackArithmetic.run(StackArithmetic.Mode.Pop, segment, pos, fileName)
 
       case _ => Error.InvalidCommand("Not implemented")
 
   // push segment i -> pushes the value of segment[i] onto the stack
   // pop segment i -> pops the value at the top of the stack and stores it in segment[i]
   // @SP holds the address of the RAM entry just after the topmost of the stack
-  object StackArithmetic:
-    def push(segment: String, pos: Int, fileName: String): Result =
+  private object StackArithmetic:
+    enum Mode:
+      case Push, Pop
+
+    def run(mode: Mode, segment: String, pos: Int, fileName: String): Result =
       segment match
-        case "constant" => pushConstant(pos)
-        case "local"    => pushToSegmentAt("@LCL", pos)
-        case "argument" => pushToSegmentAt("@ARG", pos)
-        case "this"     => pushToSegmentAt("@THIS", pos)
-        case "that"     => pushToSegmentAt("@THAT", pos)
+        case "constant" => constant(mode, pos)
+        case "local"    => segmentAt(mode, "@LCL", pos)
+        case "argument" => segmentAt(mode, "@ARG", pos)
+        case "this"     => segmentAt(mode, "@THIS", pos)
+        case "that"     => segmentAt(mode, "@THAT", pos)
         case "pointer" =>
           pos match
-            case 0 => pushToSegment("@THIS")
-            case 1 => pushToSegment("@THAT")
+            case 0 => segmentAt(mode, "@THIS")
+            case 1 => segmentAt(mode, "@THAT")
             case _ => Error.InvalidCommand(s"Invalid pointer position: $pos")
-        case "temp"   => temp(pos, pushToSegment)
-        case "static" => pushStatic(pos, fileName)
+        case "temp"   => temp(mode, pos)
+        case "static" => static(mode, pos, fileName)
         case _        => Error.InvalidCommand(s"Invalid segment: $segment")
 
-    def pop(segment: String, pos: Int, fileName: String): Result =
-      segment match
-        case "constant" => Error.InvalidCommand("Cannot pop to constant")
-        case "local"    => popFromSegmentAt("@LCL", pos)
-        case "argument" => popFromSegmentAt("@ARG", pos)
-        case "this"     => popFromSegmentAt("@THIS", pos)
-        case "that"     => popFromSegmentAt("@THAT", pos)
-        case "pointer" =>
-          pos match
-            case 0 => popFromSegment("@THIS")
-            case 1 => popFromSegment("@THAT")
-            case _ => Error.InvalidCommand(s"Invalid pointer position: $pos")
-        case "temp"   => temp(pos, popFromSegment)
-        case "static" => popStatic(pos, fileName)
-        case _        => Error.InvalidCommand(s"Invalid segment: $segment")
-
-    private def temp(pos: Int, fn: String => String) =
-      // RAM location 5 - 12
-      if pos < 0 || pos > 7 then Error.InvalidCommand(s"Invalid temp position: $pos") else fn(s"@R${5 + pos}")
+    private def temp(mode: Mode, pos: Int) =
+      if pos < 0 || pos > 7 then Error.InvalidCommand(s"Invalid temp position: $pos. Available RAM locations: 5 - 12")
+      else segmentAt(mode, s"@R${5 + pos}")
 
     // requires setting `D` for a value to push
     // RAM[SP] = D; SP++
@@ -146,15 +131,22 @@ object HASMWriter:
       "A=A-1" \ // point to the previous top of stack
       "M=D" // set top of stack to value from `D`
 
-    private def pushStatic(pos: Int, fileName: String) = pushToSegment(s"@$fileName.$pos")
+    private def static(mode: Mode, pos: Int, fileName: String) = segmentAt(mode, s"@$fileName.$pos")
 
-    private def pushConstant(value: Int) =
-      s"@$value" \
-        "D=A" \ // load constant into D
-        pushToStack
+    private def constant(mode: Mode, value: Int): Result =
+      mode match
+        case Mode.Push => s"@$value" \ "D=A" \ pushToStack
+        case Mode.Pop  => Error.InvalidCommand("Cannot pop to constant")
 
-    private def pushToSegmentAt(segment: String, offset: Int) =
-      pushToSegment(segmentOffset(segment, offset))
+    private def segmentAt(mode: Mode, name: String, offset: Int): Result =
+      segmentAt(mode, segmentOffset(name, offset))
+
+    private def segmentAt(mode: Mode, name: String): Result =
+      (
+        mode match
+          case Mode.Push => pushToSegment
+          case Mode.Pop  => popFromSegment
+      ).apply(name)
 
     private def pushToSegment(segment: String) =
       segment \
@@ -186,10 +178,8 @@ object HASMWriter:
         name \
         "A=M+D" // point to segment (base address + offset)
 
-    private def popStatic(pos: Int, fileName: String) = popFromSegment(s"@$fileName.$pos")
-
-  object IntegerArithmetic:
-    def all(cmd: String, n: Int): Result =
+  private object IntegerArithmetic:
+    def from(cmd: String, fileName: String, line: Int): Result =
       cmd match
         case "add" => popTwo \ "M=D+M"
         case "sub" => popTwo \ "M=M-D"
@@ -197,28 +187,32 @@ object HASMWriter:
         case "and" => popTwo \ "M=D&M"
         case "or"  => popTwo \ "M=D|M"
         case "not" => popOne \ "M=!M"
-        case "eq"  => cmp("JEQ", n)
-        case "gt"  => cmp("JGT", n)
-        case "lt"  => cmp("JLT", n)
+        case "eq"  => cmp("JEQ", fileName, line)
+        case "gt"  => cmp("JGT", fileName, line)
+        case "lt"  => cmp("JLT", fileName, line)
 
-    private def cmp(code: String, i: Int) = popTwo \
-      "D=M-D" \ // subtract 2nd value from 1st
-      //
-      s"@ON_TRUE_$i" \ // if True, then jump to ON_TRUE_$i
-      s"D;$code" \
-      // --- False ---
-      "@SP" \
-      "A=M-1" \
-      "M=0" \
-      s"@CHECK_END_$i" \ // jump to CHECK_END_$i
-      "0;JMP" \
-      // -- True ---
-      s"(ON_TRUE_$i)" \
-      "@SP" \
-      "A=M-1" \
-      "M=-1" \
-      //
-      s"(CHECK_END_$i)"
+    // TODO: use filename ?
+    private def cmp(code: String, fileName: String, line: Int) =
+      val suffix = s"${fileName}_${line}"
+
+      popTwo \
+        "D=M-D" \ // subtract 2nd value from 1st
+        //
+        s"@ON_TRUE_$suffix" \ // if True, then jump to ON_TRUE_$i
+        s"D;$code" \
+        // --- False ---
+        "@SP" \
+        "A=M-1" \
+        "M=0" \
+        s"@CHECK_END_$suffix" \ // jump to CHECK_END_$i
+        "0;JMP" \
+        // -- True ---
+        s"(ON_TRUE_$suffix)" \
+        "@SP" \
+        "A=M-1" \
+        "M=-1" \
+        //
+        s"(CHECK_END_$suffix)"
 
     // set `D` to value from top of stack and `M` to value from 2nd top of stack
     private val popTwo = "@SP" \
