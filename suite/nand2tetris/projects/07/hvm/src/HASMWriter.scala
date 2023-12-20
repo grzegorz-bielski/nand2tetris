@@ -13,12 +13,12 @@ object HASMWriter:
       case Command.Push(segment, pos) => StackArithmetic.from(StackArithmetic.Mode.Push, segment, pos, fileName)
       case Command.Pop(segment, pos)  => StackArithmetic.from(StackArithmetic.Mode.Pop, segment, pos, fileName)
 
-      case Command.Label(label) => Branching.label(Branching.LabelId(fileName, pf.map(_.name), label))
-      case Command.Goto(label)  => Branching.goto(Branching.LabelId(fileName, pf.map(_.name), label))
-      case Command.If(label)    => Branching.ifGoto(Branching.LabelId(fileName, pf.map(_.name), label))
+      case Command.Label(label) => Branching.label(Branching.LabelId(pf.map(_.name), label))
+      case Command.Goto(label)  => Branching.goto(Branching.LabelId(pf.map(_.name), label))
+      case Command.If(label)    => Branching.ifGoto(Branching.LabelId(pf.map(_.name), label))
 
       case Command.Function(name, nVars) => Functions.declaration(fileName, name, nVars)
-      case Command.Call(name, nArgs) => Functions.ReturnAddress.of(fileName, pf).pipe(Functions.call(_, name, nArgs))
+      case Command.Call(name, nArgs) => Functions.ReturnAddress.of(pf).pipe(Functions.call(_, name, nArgs))
       case Command.Return            => Functions.`return`
 
   def writeBootstrap: String = Bootstrap.code
@@ -99,7 +99,7 @@ object HASMWriter:
 
     // requires setting `D` for a value to push
     // RAM[SP] = D; SP++
-    private val pushToStackToD = "@SP" \
+    val pushToStackToD = "@SP" \
       "AM=M+1" \ // increment stack pointer and point to next empty cell
       "A=A-1" \ // point to the previous top of stack
       "M=D" // set top of stack to value from `D`
@@ -150,8 +150,8 @@ object HASMWriter:
     private val popAndPush = "@SP" \ "A=M-1"
 
   private object Branching:
-    final case class LabelId(fileName: String, functionName: Option[String], labelName: String):
-      def value = s"$fileName.${functionName.getOrElse("")}$$$labelName"
+    final case class LabelId(functionName: Option[String], labelName: String):
+      def value = s"${functionName.getOrElse("")}$$$labelName"
 
     def label(id: LabelId) = s"(${id.value})"
 
@@ -168,37 +168,39 @@ object HASMWriter:
     import StackArithmetic.*
 
     def declaration(fileName: String, name: String, nVars: Int) =
-      s"($fileName.$name)" \
-        s"@SP" \ // set `A` to stack pointer
-        "A=M" \ // point to stack pointer
-        (0 until 5).map(_ => s"M=0" \ "A=A+1").mkString("\n") \ // set `M` to fn() for each variable
-        "D=A" \ // set `D` to stack pointer + nVars
-        "@SP" \
-        "M=D" // set stack pointer to `D`
+      s"// declaring $name $nVars" \
+        s"($name)" \?
+        Option.unless(nVars == 0):
+          s"@SP" \ // set `A` to stack pointer
+            "A=M" \ // point to stack pointer
+            (0 until nVars).map(_ => s"M=0" \ "A=A+1").mkString("\n") \ // set `M` to fn() for each variable
+            "D=A" \ // set `D` to stack pointer + nVars
+            "@SP" \
+            "M=D" // set stack pointer to `D`
 
     enum ReturnAddress:
       case Root
 
-      /** @param fileName
-        *   file name in which parent function is declared
-        * @param parentFunction
+      /** @param parentFunction
         *   name of the parent function
         * @param i
         *   call number within parent function
         */
-      case Nested(fileName: String, parentFunction: String, i: Int)
+      case Nested(parentFunction: String, i: Int)
 
       override def toString = this match
         case Root                                => "root.ret.0"
-        case Nested(fileName, parentFunction, i) => s"$fileName.$parentFunction.ret.$i"
+        case Nested(parentFunction, i) => s"$parentFunction.ret.$i"
 
     object ReturnAddress:
-      def of(fileName: String, pf: Option[ParentFunction]) =
-        pf.fold(Root)(pf => Nested(fileName, pf.name, pf.callCount))
+      def of(pf: Option[ParentFunction]) =
+        pf.fold(Root)(pf => Nested(pf.name, pf.callCount))
 
     // assumes function declaration has been called and it exists
     def call(returnAddress: ReturnAddress, functionName: String, nArgs: Int) =
-      pushToSegment(s"@$returnAddress") \ // save return address
+      s"// calling $functionName $nArgs - $returnAddress" \
+        // save return address
+        s"@$returnAddress" \ "D=A" \ pushToStackToD \
         pushToSegment("@LCL") \
         pushToSegment("@ARG") \
         pushToSegment("@THIS") \
@@ -232,9 +234,16 @@ object HASMWriter:
         fromFrameAt(offset) \ "D=M" \ s"@$variable" \ "M=D"
 
       // frame = LCL
-      "@LCL" \
+      "// return" \
+        "@LCL" \
         "D=M" \
         frame \
+        "M=D" \
+        // returnAddress = *(frame - 5)
+        // save return address in temp variable so it's no overridden by `*ARG = pop()`
+        fromFrameAt(5) \
+        "D=M" \
+        "@R14" \
         "M=D" \
         // Copy the return value onto argument 0 (*ARG = pop()), and sets SP to point to the address just following it. (SP = ARG + 1)
         // This effectively frees the global stack area below the new value of SP.
@@ -260,10 +269,11 @@ object HASMWriter:
         fromFrameToAt("ARG", 3) \
         // LCL = *(frame - 4)
         fromFrameToAt("LCL", 4) \
-        // goto *(frame - 5) // go to return address from stack saved by `call`
-        fromFrameAt(5) \
+        // goto returnAddress // go to return address from stack saved by `call`
+        "@R14" \
         "A=M" \
         "0;JMP"
+
   private object Bootstrap:
     import Functions.*
 
@@ -273,6 +283,14 @@ object HASMWriter:
         "D=A" \
         "@SP" \
         "M=D" \
-        call(ReturnAddress.Root, "Sys.init", 0) // in turn calls `Main.main`
+        call(
+          ReturnAddress.Root,
+          "Sys.init",
+          0
+        ) // the function is named `Sys.init` but VM translator always prepends the file name
 
-  extension (s: String) inline def \(inline line: String) = s + "\n" + line
+  extension (s: String)
+    inline def \(inline line: String): String = s + "\n" + line
+    inline def \?(inline line: Option[String]): String = line match
+      case Some(l) => s \ l
+      case None    => s

@@ -6,22 +6,23 @@ package hvm
 
 import scala.util.chaining.*
 
-// scala-cli . -- $(pwd)/../StackArithmetic/StackTest/StackTest  $(pwd)/../StackArithmetic/StackTest/StackTest
+// scala-cli . -- $(pwd)/../StackArithmetic/StackTest/StackTest  $(pwd)/../StackArithmetic/StackTest/StackTest false
 @main
-def run(source: String, dest: String): Unit =
-  HVM.translateToString(source, dest)
+def run(source: String, dest: String, includeBootstrap: Boolean = false): Unit =
+  HVM.translateToString(source, dest, includeBootstrap)
 
 object HVM:
   type Result = Either[Vector[Error], Vector[String]]
 
-  def translateToString(source: String, dest: String, includeBootstrap: Boolean = false): Unit =
-    val isDir = os.isDir(os.Path(source))
+  def translateToString(source: String, dest: String, includeBootstrap: Boolean): Unit =
+    val srcPath = os.Path(source)
+    val isDir = os.isDir(srcPath)
     val result =
       if isDir then
-        os.list(os.Path(source))
+        os.list(srcPath)
           .toVector
           .collect:
-            case path if path.last.endsWith(".vm") => translate(path)
+            case path if !path.last.startsWith(".") && path.last.endsWith(".vm") => translate(path)
       else Vector(translate(os.Path(s"$source.vm")))
 
     val errors = result
@@ -40,7 +41,7 @@ object HVM:
           if includeBootstrap then HASMWriter.writeBootstrap else ""
         .mkString("\n")
 
-      val destPath = if isDir then os.Path(dest) / s"$source.asm" else os.Path(s"$dest.asm")
+      val destPath = if isDir then os.Path(dest) / s"${srcPath.last}.asm" else os.Path(s"$dest.asm")
 
       os.write.over(destPath, asm)
 

@@ -1,13 +1,8 @@
 
-(SimpleFunction.SimpleFunction.test)
+// declaring SimpleFunction.test 2
+(SimpleFunction.test)
 @SP
 A=M
-M=0
-A=A+1
-M=0
-A=A+1
-M=0
-A=A+1
 M=0
 A=A+1
 M=0
@@ -69,6 +64,7 @@ AM=M-1
 D=M
 A=A-1
 M=M-D
+// return
 @LCL
 D=M
 @R13
