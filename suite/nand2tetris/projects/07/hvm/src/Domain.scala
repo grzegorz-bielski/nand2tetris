@@ -7,9 +7,9 @@ enum Command:
   case Label(name: String)
   case Goto(label: String)
   case If(label: String)
-  case Function(a0: String, a1: Int)
+  case Function(name: String, nVars: Int)
   case Return
-  case Call(a0: String, a1: Int)
+  case Call(function: String, nArgs: Int)
 
 enum Error:
   case InvalidCommand(msg: String)

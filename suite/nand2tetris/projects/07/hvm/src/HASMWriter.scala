@@ -1,19 +1,27 @@
 package hvm
 
+import scala.util.chaining.*
+
+/** HVM backend for the hack computer platform
+  */
 object HASMWriter:
   type Result = String | Error
 
-  def writeCmd(cmd: Command, fileName: String, line: Int): Result =
+  def writeCmd(cmd: Command, fileName: String, line: Int, pf: Option[ParentFunction]): Result =
     cmd match
       case Command.Arithmetic(name)   => IntegerArithmetic.from(name, fileName, line)
       case Command.Push(segment, pos) => StackArithmetic.from(StackArithmetic.Mode.Push, segment, pos, fileName)
       case Command.Pop(segment, pos)  => StackArithmetic.from(StackArithmetic.Mode.Pop, segment, pos, fileName)
 
-      case Command.Label(name) => Branching.label(name)
-      case Command.Goto(label) => Branching.goto(label)
-      case Command.If(label)   => Branching.ifGoto(label)
+      case Command.Label(label) => Branching.label(Branching.LabelId(fileName, pf.map(_.name), label))
+      case Command.Goto(label)  => Branching.goto(Branching.LabelId(fileName, pf.map(_.name), label))
+      case Command.If(label)    => Branching.ifGoto(Branching.LabelId(fileName, pf.map(_.name), label))
 
-      case _ => Error.InvalidCommand("Not implemented")
+      case Command.Function(name, nVars) => Functions.declaration(fileName, name, nVars)
+      case Command.Call(name, nArgs) => Functions.ReturnAddress.of(fileName, pf).pipe(Functions.call(_, name, nArgs))
+      case Command.Return            => Functions.`return`
+
+  def writeBootstrap: String = Bootstrap.code
 
   // push segment i -> pushes the value of segment[i] onto the stack
   // pop segment i -> pops the value at the top of the stack and stores it in segment[i]
@@ -59,7 +67,7 @@ object HASMWriter:
           case Mode.Pop  => popFromSegment
       ).apply(name)
 
-    private def pushToSegment(segment: String) =
+    def pushToSegment(segment: String) =
       segment \
         "D=M" \ // load value from segment
         pushToStackToD
@@ -85,7 +93,7 @@ object HASMWriter:
 
       // sets `D` to value from top of stack
     // SP--;  D = RAM[SP]
-    private val popFromStackToD = "@SP" \
+    val popFromStackToD = "@SP" \
       "AM=M-1" \ // decrement stack pointer and point to next value on stack
       "D=M" // set value from stack to `D`
 
@@ -109,7 +117,6 @@ object HASMWriter:
         case "gt"  => cmp("JGT", fileName, line)
         case "lt"  => cmp("JLT", fileName, line)
 
-    // TODO: use filename ?
     private def cmp(code: String, fileName: String, line: Int) =
       val suffix = s"${fileName}_${line}"
 
@@ -142,16 +149,130 @@ object HASMWriter:
     // pop & push one
     private val popAndPush = "@SP" \ "A=M-1"
 
-  // BasicLoop, FibonacciSeries, and SimpleFunction do no need bootstrap code
   private object Branching:
-    // labels and gotos are global
+    final case class LabelId(fileName: String, functionName: Option[String], labelName: String):
+      def value = s"$fileName.${functionName.getOrElse("")}$$$labelName"
 
-    def label(name: String) = s"($name)"
+    def label(id: LabelId) = s"(${id.value})"
 
-    def goto(label: String) = s"@$label" \ "0;JMP"
+    def goto(id: LabelId) = s"@${id.value}" \ "0;JMP"
 
-    def ifGoto(label: String) =
-      "@SP" \ "AM=M-1" \ // pop one
-        "D=M" \ s"@$label" \ "D;JNE" // jump to label if not equal to 0
+    def ifGoto(id: LabelId) =
+      "@SP" \
+        "AM=M-1" \ // pop one
+        "D=M" \
+        s"@${id.value}" \
+        "D;JNE" // jump to label if not equal to 0
+
+  private object Functions:
+    import StackArithmetic.*
+
+    def declaration(fileName: String, name: String, nVars: Int) =
+      s"($fileName.$name)" \
+        s"@SP" \ // set `A` to stack pointer
+        "A=M" \ // point to stack pointer
+        (0 until 5).map(_ => s"M=0" \ "A=A+1").mkString("\n") \ // set `M` to fn() for each variable
+        "D=A" \ // set `D` to stack pointer + nVars
+        "@SP" \
+        "M=D" // set stack pointer to `D`
+
+    enum ReturnAddress:
+      case Root
+
+      /** @param fileName
+        *   file name in which parent function is declared
+        * @param parentFunction
+        *   name of the parent function
+        * @param i
+        *   call number within parent function
+        */
+      case Nested(fileName: String, parentFunction: String, i: Int)
+
+      override def toString = this match
+        case Root                                => "root.ret.0"
+        case Nested(fileName, parentFunction, i) => s"$fileName.$parentFunction.ret.$i"
+
+    object ReturnAddress:
+      def of(fileName: String, pf: Option[ParentFunction]) =
+        pf.fold(Root)(pf => Nested(fileName, pf.name, pf.callCount))
+
+    // assumes function declaration has been called and it exists
+    def call(returnAddress: ReturnAddress, functionName: String, nArgs: Int) =
+      pushToSegment(s"@$returnAddress") \ // save return address
+        pushToSegment("@LCL") \
+        pushToSegment("@ARG") \
+        pushToSegment("@THIS") \
+        pushToSegment("@THAT") \
+        // ARG = SP - 5 - nArgs
+        s"@SP" \
+        "D=M" \ // set `D` to stack pointer
+        s"@5" \
+        "D=D-A" \ // set `D` to stack pointer - 5
+        s"@$nArgs" \
+        "D=D-A" \ // set `D` to stack pointer - 5 - nArgs
+        "@ARG" \
+        "M=D" \ // set ARG to stack pointer - 5 - nArgs
+        // LCL = SP
+        "@SP" \
+        "D=M" \ // set `D` to stack pointer
+        "@LCL" \
+        "M=D" \ // set LCL to stack pointer
+        // goto function
+        s"@$functionName" \
+        "0;JMP" \
+        s"($returnAddress)"
+
+    lazy val `return` =
+      val frame = "@R13" // temp variable
+
+      def fromFrameAt(offset: Int) =
+        frame \ "D=M" \ s"@$offset" \ "A=D-A"
+
+      def fromFrameToAt(variable: String, offset: Int) =
+        fromFrameAt(offset) \ "D=M" \ s"@$variable" \ "M=D"
+
+      // frame = LCL
+      "@LCL" \
+        "D=M" \
+        frame \
+        "M=D" \
+        // Copy the return value onto argument 0 (*ARG = pop()), and sets SP to point to the address just following it. (SP = ARG + 1)
+        // This effectively frees the global stack area below the new value of SP.
+        // Thus, when the caller resumes its execution, it sees the return value at the top of its working stack.
+        // ---
+        // *ARG = pop()
+        "@SP" \
+        "A=M-1" \
+        "D=M" \
+        "@ARG" \
+        "A=M" \ // *ARG = D, change the value ARG points to
+        "M=D" \
+        // SP = ARG + 1
+        "@ARG" \
+        "D=M+1" \
+        "@SP" \
+        "M=D" \
+        // THAT = *(frame - 1)
+        fromFrameToAt("THAT", 1) \
+        // THIS = *(frame - 2)
+        fromFrameToAt("THIS", 2) \
+        // ARG = *(frame - 3)
+        fromFrameToAt("ARG", 3) \
+        // LCL = *(frame - 4)
+        fromFrameToAt("LCL", 4) \
+        // goto *(frame - 5) // go to return address from stack saved by `call`
+        fromFrameAt(5) \
+        "A=M" \
+        "0;JMP"
+  private object Bootstrap:
+    import Functions.*
+
+    lazy val code =
+      // maps stack on the host from 256 address onward
+      "@256" \
+        "D=A" \
+        "@SP" \
+        "M=D" \
+        call(ReturnAddress.Root, "Sys.init", 0) // in turn calls `Main.main`
 
   extension (s: String) inline def \(inline line: String) = s + "\n" + line

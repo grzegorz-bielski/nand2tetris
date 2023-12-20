@@ -14,7 +14,7 @@ def run(source: String, dest: String): Unit =
 object HVM:
   type Result = Either[Vector[Error], Vector[String]]
 
-  def translateToString(source: String, dest: String): Unit =
+  def translateToString(source: String, dest: String, includeBootstrap: Boolean = false): Unit =
     val isDir = os.isDir(os.Path(source))
     val result =
       if isDir then
@@ -32,26 +32,53 @@ object HVM:
     if errors.nonEmpty
     then println(s"Could not translate the program: $errors")
     else
-      val asmLines = result
+      val asm = result
         .collect:
           case Right(lines) => lines
         .flatten
+        .prepended:
+          if includeBootstrap then HASMWriter.writeBootstrap else ""
         .mkString("\n")
 
       val destPath = if isDir then os.Path(dest) / s"$source.asm" else os.Path(s"$dest.asm")
 
-      os.write.over(destPath, asmLines)
+      os.write.over(destPath, asm)
 
   def translate(path: os.Path): Result =
     Parser.parseAll(path).pipe(translate(path.last, _))
 
   def translate(fileName: String, sourceLines: Vector[(Int, Parser.Result)]): Result =
-    val fileNameWithoutExt = fileName.dropRight(3)
-    val result = sourceLines.collect:
-      case (_, e: Error)          => e
-      case (lineNr, cmd: Command) => HASMWriter.writeCmd(cmd, fileNameWithoutExt, lineNr)
+    sourceLines.foldLeft(TranslationState.empty(fileName))(_.translateLine(_)).result
 
-    val errors = result.collect:
-      case e: Error => e
+  private final case class TranslationState(
+      fileName: String,
+      parentFunction: Option[ParentFunction],
+      results: Vector[HASMWriter.Result]
+  ):
+    def translateLine(res: (Int, Parser.Result)): TranslationState = res match
+      case (_, e: Error) => copy(results = results :+ e)
+      case (lineNr, cmd @ Command.Function(name, _)) =>
+        writeCmd(cmd, lineNr).copy(parentFunction = Some(ParentFunction(name, 0)))
+      case (lineNr, cmd @ Command.Call(_, _)) =>
+        writeCmd(cmd, lineNr).copy(parentFunction = parentFunction.map(_.incrementCalls))
+      case (lineNr, cmd: Command) => writeCmd(cmd, lineNr)
+      case _                      => this
 
-    if errors.nonEmpty then Left(errors) else Right(result.asInstanceOf[Vector[String]])
+    private def writeCmd(cmd: Command, lineNr: Int): TranslationState =
+      copy(results = results :+ HASMWriter.writeCmd(cmd, fileName, lineNr, parentFunction))
+
+    def result: Result =
+      val errors = results.collect:
+        case e: Error => e
+
+      if errors.nonEmpty then Left(errors) else Right(results.asInstanceOf[Vector[String]])
+
+  private object TranslationState:
+    def empty(fileName: String) = TranslationState(
+      fileName.dropRight(3), // drop extension
+      None,
+      Vector.empty
+    )
+
+final case class ParentFunction(name: String, callCount: Int):
+  def incrementCalls = copy(callCount = callCount + 1)

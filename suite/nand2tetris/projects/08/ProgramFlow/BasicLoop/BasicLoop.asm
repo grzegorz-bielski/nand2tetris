@@ -17,7 +17,7 @@ D=M
 @R13
 A=M
 M=D
-(LOOP)
+(BasicLoop.$LOOP)
 @0
 D=A
 @ARG
@@ -99,7 +99,7 @@ M=D
 @SP
 AM=M-1
 D=M
-@LOOP
+@BasicLoop.$LOOP
 D;JNE
 @0
 D=A
