@@ -1,0 +1,129 @@
+
+class Game {
+    field Player player;
+    field Array enemies; // an array of Enemy objects
+    field int numEnemies;
+
+    field boolean exit;
+    field int score;
+
+    constructor Game new() {
+        let player = Player.new();
+        
+        let numEnemies = 5;
+        do fillEnemies();
+        
+        let exit = false;
+	    let score = 0;
+
+        return this;
+    }
+
+    method void dispose() {
+       do disposeEnemies();
+       do player.dispose();
+       return;
+    }
+
+    method void run() {
+        var char key;
+
+        do Screen.clearScreen();
+
+        while (~exit) {
+            do drawEnemies();
+
+            let key = Keyboard.keyPressed();
+
+            if (key = 140) { let exit = true; }
+            if (key = 131) { do player.moveUp(); } 
+            if (key = 133) { do player.moveDown(); }  
+            if (key = 130) { do player.moveLeft(); }
+            if (key = 132) { do player.moveRight(); }
+
+            let exit = checkIntersection();
+        }
+
+	    if (exit) {
+            do Screen.clearScreen();
+            do Output.moveCursor(10,27);
+	        do Output.printString("Game Over");
+	    }
+
+        return;
+    }
+
+    method boolean checkIntersection() {
+        var Enemy e;
+        var int i;
+        var int pLeft, pRight, pTop, pDown;
+        var int eLeft, eRight, eTop, eDown;
+        var boolean intersects;
+
+        let i = 0;
+        let pLeft = player.left();
+        let pRight = player.right();
+        let pTop = player.top();
+        let pDown = player.bottom();
+
+        while (i < numEnemies) {
+            let e = enemies[i];
+            let i = i + 1;
+
+            let eLeft = e.left();
+            let eRight = e.right();
+            let eTop = e.top();
+            let eDown = e.bottom();
+
+            let intersects = (
+                (pLeft < eRight) &
+                (pRight > eLeft) & 
+                (pTop < eDown) & 
+                (pDown > eTop)
+            );
+
+            // do Output.printInt(intersects);
+
+            if (intersects) {
+               return true;
+            }
+        }
+
+        return false;
+    }
+
+    method void drawEnemies() {
+        var Enemy e;
+        var int i;
+        let i = 0;
+        while (i < numEnemies) {
+            let e = enemies[i];
+            do e.draw();
+            let i = i + 1;
+        }
+        return;
+    }
+
+    method void fillEnemies() {
+        var int i;
+        let enemies = Array.new(numEnemies);
+        let i = 0;
+        while (i < numEnemies) {
+            let enemies[i] = Enemy.new(50 + (i * 100), 0);
+            let i = i + 1;
+        }
+        return;
+    }
+
+    method void disposeEnemies() {
+        var Enemy e;
+        var int i;
+        let i = 0;
+        while (i < numEnemies) {
+            let e = enemies[i];
+            do e.dispose();
+            let i = i + 1;
+        }
+        return;
+    }
+}

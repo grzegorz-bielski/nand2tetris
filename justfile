@@ -8,8 +8,8 @@ asm:
     ./suite/nand2tetris/tools/Assembler.sh
 vm:
     ./suite/nand2tetris/tools/VMEmulator.sh
-jackc:
-    ./suite/nand2tetris/tools/JackCompiler.sh
+jackc path:
+    ./suite/nand2tetris/tools/JackCompiler.sh {{path}}
 
 # executable projects
 

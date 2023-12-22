@@ -1,0 +1,94 @@
+
+class Player {
+   field int x, y;
+   field int size; 
+
+   constructor Player new() {
+        let x = 100;
+        let y = 100;
+        let size = 10;
+
+        return this;
+   }
+
+   method void dispose() {
+      do Memory.deAlloc(this);
+      return;
+   }
+
+   method int right() {
+      return x + size;
+   }
+
+   method int left() {
+      return x;
+   }
+
+   method int top() {
+      return y;
+   }
+
+   method int bottom() {
+      return y + size;
+   }
+
+   method void printPos() {
+      // do Output.printInt(x);
+      // do Output.printInt(y);
+      return;
+   }
+
+   method void moveUp() {
+      do printPos();
+      if (y > 1) {
+         // Erases the bottom two rows of this square in its current location
+         do Screen.setColor(false);
+         do Screen.drawRectangle(x, (y + size) - 1, x + size, y + size);
+         let y = y - 2;
+         // Draws the top two rows of this square in its new location
+         do Screen.setColor(true);
+         do Screen.drawRectangle(x, y, x + size, y + 1);
+         do Sys.wait(50);
+      }
+      return;
+   }
+
+   method void moveDown() {
+      do printPos();
+      if ((y + size) < 254) {
+         do Screen.setColor(false);
+         do Screen.drawRectangle(x, y, x + size, y + 1);
+         let y = y + 2;
+         do Screen.setColor(true);
+         do Screen.drawRectangle(x, (y + size) - 1, x + size, y + size);
+         do Sys.wait(50);
+      }
+      return;
+   }
+
+    method void moveLeft() {
+      do printPos();
+      if (x > 1) {
+         do Screen.setColor(false);
+         do Screen.drawRectangle((x + size) - 1, y, x + size, y + size);
+         let x = x - 2;
+         do Screen.setColor(true);
+         do Screen.drawRectangle(x, y, x + 1, y + size);
+         do Sys.wait(50);
+      }
+      return;
+   }
+
+   method void moveRight() {
+      do printPos();
+      if ((x + size) < 510) {
+         do Screen.setColor(false);
+         do Screen.drawRectangle(x, y, x + 1, y + size);
+         let x = x + 2;
+         do Screen.setColor(true);
+         do Screen.drawRectangle((x + size) - 1, y, x + size, y + size);
+         do Sys.wait(50);
+      }
+      return;
+   }
+}

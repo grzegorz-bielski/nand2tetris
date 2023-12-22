@@ -1,0 +1,45 @@
+class Enemy {
+    field int x, y;
+    field int width, height;
+
+    constructor Enemy new(int ax, int ay) {
+        let x = ax;
+        let y = ay;
+        let width = 10;
+        let height = 10;
+
+        return this;
+    }
+
+    method int right() {
+      return x + width;
+    }
+
+    method int left() {
+      return x;
+    }
+
+    method int top() {
+      return y;
+    }
+
+    method int bottom() {
+      return y + height;
+    }
+
+    method void dispose() {
+        do Memory.deAlloc(this);
+        return;
+    }
+
+    method void show() {
+        do Screen.setColor(true);
+        do draw();
+        return;
+    }
+
+    method void draw() {
+        do Screen.drawRectangle(x, y, x + width, y + height);
+        return;
+    }
+}
