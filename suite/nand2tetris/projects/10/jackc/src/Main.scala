@@ -16,7 +16,7 @@ import XMLEncoder.*
 // 3. Jack engine with expressions
 // 4. Jack engine with array-oriented statements
 
-// scala-cli . -- $(pwd)/../ArrayTest/Main.jack
+// scala-cli . -- $(pwd)/../ExpressionLessSquare/SquareGame.jack $(pwd)/../ExpressionLessSquare/SquareGameTC.xml
 @main
 def run(source: String, dest: String) =
   tokenizeToXML(source, dest)
@@ -80,65 +80,69 @@ object Tokenizer:
         chunk.drop(str.length + 2)
       else chunk
 
-    @tailrec
-    def tokenizeAll(chunk: String): Unit =
-      if chunk.isEmpty then ()
-      else
-        tokenizeAll:
-          tokenizeKeywords(chunk)
-            .pipe(tokenizeIdentifiers)
-            .pipe(tokenizeSymbols)
-            .pipe(tokenizeIntConst)
-            .pipe(tokenizeStringConst)
+    def tokenizeAll(line: String): Unit | Error =
+      @tailrec
+      def go(chunk: String, prevChunk: String): Unit | Error =
+        if chunk.isEmpty then ()
+        else if chunk == prevChunk then Error.SyntaxError(s"Could not tokenize: $line")
+        else
+          go(
+            tokenizeKeywords(chunk)
+              .pipe(tokenizeIdentifiers)
+              .pipe(tokenizeSymbols)
+              .pipe(tokenizeIntConst)
+              .pipe(tokenizeStringConst),
+            chunk
+          )
+
+      go(line, "")
 
     os.read
       .lines(srcPath)
       .iterator
       .withRemovedComments
-      .foreach(tokenizeAll)
+      .takeWhile:
+        // little bit ugly - relies on side effects
+        tokenizeAll(_) match
+          case Error.SyntaxError(message) =>
+            tokens.clear()
+            println(message)
+            false
+          case _ => true
+      .force
 
     tokens.result()
 
   object Comments:
-    val commentPatterns = List[(String, Option[String])](
-      "/**" -> Some("*/"),
-      "/*" -> Some("*/"),
-      "//" -> None
-    )
-
     extension (iterator: Iterator[String])
-      def withRemovedComments: Iterator[String] =
-        val builder = Iterator.newBuilder[String]
+      def withRemovedComments: LazyList[String] =
+        def go(lines: LazyList[String], insideComment: Boolean): LazyList[String] =
+          lines match
+            // handle comment start
+            case line #:: _ if !insideComment =>
+              line.indexOf("//") match
+                case -1 =>
+                  line.indexOf("/*") match
+                    // no comment, moving on
+                    case -1 => line #:: go(lines.tail, insideComment = false)
+                    // handle multi line comment
+                    case i =>
+                      val rest =
+                        // check if there is closing tag on the same line
+                        line.indexOf("*/") match
+                          case -1 => go(lines.tail, insideComment = true)
+                          case i  => go(line.drop(i + 2) #:: lines.tail, insideComment = false)
 
-        def next(chunk: String, until: Option[String]) =
-          until.fold(iterator.nextOption()): u =>
-            chunk.indexOf(u) match
-              // search for EOC on the next line
-              case -1 =>
-                val iter = iterator.dropWhile(!_.contains(u))
-                iter.next()
-                iter.nextOption()
-              // found EOC on the same line, create artificial chunk
-              case i => Some(chunk.drop(i + u.length))
+                      line.take(i) #:: rest
+                // handle single line comment
+                case i => go(line.take(i) #:: lines.tail, insideComment = false)
 
-        @tailrec
-        def traverse(remaining: String, nextChunk: Option[String]): Unit =
-          nextChunk match
-            case None => ()
-            case Some(chunk) =>
-              @tailrec
-              def go(patterns: List[(String, Option[String])]): Unit =
-                patterns match
-                  case Nil =>
-                    builder.addOne(remaining + chunk)
-                    traverse("", iterator.nextOption()) // TODO: make it actually lazy, do not read the whole file
-                  case (pattern, until) :: remainingPatterns =>
-                    chunk.indexOf(pattern) match
-                      // check other patterns for comments
-                      case -1 => go(remainingPatterns)
-                      // comment found
-                      case i => traverse(chunk.take(i), next(chunk, until))
-              go(commentPatterns)
+            // handle multiline comment end
+            case line #:: _ if insideComment =>
+              line.indexOf("*/") match
+                case -1 => go(lines.tail, insideComment = true)
+                case i  => line.drop(i + 2) #:: go(lines.tail, insideComment = false)
 
-        traverse("", iterator.nextOption())
-        builder.result()
+            case _ => LazyList.empty
+
+        go(LazyList.from[String](iterator), insideComment = false)
