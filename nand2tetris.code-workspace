@@ -11,6 +11,10 @@
 		{
 			"name": "hvm",
 			"path": "suite/nand2tetris/projects/07/hvm"
+		},
+		{
+			"name": "jackc",
+			"path": "suite/nand2tetris/projects/10/jackc"
 		}
 	],
 	"settings": {
@@ -18,7 +22,8 @@
 			"**/target": true
 		},
 		"cSpell.words": [
-			"HASM"
+			"HASM",
+			"jackc"
 		]
 	}
 }

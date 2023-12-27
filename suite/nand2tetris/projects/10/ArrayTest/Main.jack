@@ -21,6 +21,14 @@ class Main {
          let i = i + 1;
       }
 
+      /** does some comment
+      * f
+      *
+      dsddd
+      */
+      /* and some more */ /* abv */ // cc
+      //// cc
+
       do Output.printString("The average is ");
       do Output.printInt(sum / length);
       do Output.printLn();
