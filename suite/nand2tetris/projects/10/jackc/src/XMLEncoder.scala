@@ -3,19 +3,17 @@ package jackc
 enum XML:
   case Element(name: String, value: XML*)
   case Text(value: String)
-  
-  val multiValuePrepend = "\t"
 
   // not stack safe
-  def toStringFormatted: String = this match
+  def toStringFormatted(multiValuePrepend: String = "\t"): String = this match
     case Text(value)            => value
     case Element(name)          => s"<$name>"
     case Element(name, values*) => 
       if values.length == 1 then
-        s"""<$name> ${values.map(_.toStringFormatted).mkString} </$name>"""
+        s"""<$name> ${values.map(_.toStringFormatted(multiValuePrepend)).mkString} </$name>"""
       else
         s"""<$name>
-           |${values.map(value => multiValuePrepend + value.toStringFormatted).mkString("\n")}
+           |${values.map(value => multiValuePrepend + value.toStringFormatted(multiValuePrepend)).mkString("\n")}
            |</$name>""".stripMargin
 trait XMLEncoder[A]:
   def encode(value: A): XML
