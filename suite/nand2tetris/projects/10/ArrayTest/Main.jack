@@ -31,7 +31,7 @@ class Main {
 
       do Output.printString("The average is ");
       do Output.printInt(sum / length);
-      do Output.printLn();
+      do Output.println();
       return;
    }
 }

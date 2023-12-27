@@ -8,6 +8,8 @@ import scala.util.chaining.*
 import scala.annotation.tailrec
 import geny.*
 
+import XMLEncoder.*
+
 // TODO:
 // 1. Jack tokenizer
 // 2. Jack compilation engine (syntax analyzer) without expressions and array-oriented statements
@@ -16,8 +18,13 @@ import geny.*
 
 // scala-cli . -- $(pwd)/../ArrayTest/Main.jack
 @main
-def run(path: String) =
-  println(Tokenizer.tokenizeAll(os.Path(path)))
+def run(source: String, dest: String) =
+  tokenizeToXML(source, dest)
+
+def tokenizeToXML(source: String, dest: String) =
+  val tokens = Tokenizer.tokenize(os.Path(source)).encode.toStringFormatted
+
+  os.write.over(os.Path(dest), tokens)
 
 enum Error:
   case SyntaxError(message: String)
@@ -25,20 +32,23 @@ enum Error:
 object Tokenizer:
   import Comments.*
 
-  def tokenizeAll(srcPath: os.Path): Vector[Token] =
+  /** Tokenize given file line by line, calling the `tokenizeAll` recursively on each line until all tokens are found
+    * and `chunk` is exhausted.
+    */
+  def tokenize(srcPath: os.Path): Vector[Token] =
     val tokens = Vector.newBuilder[Token]
 
     def tokenizeKeywords(chunk: String) = Token.allPossibleKeywords.foldLeft(chunk.dropWhile(_.isWhitespace)):
       (acc, keyword) =>
         if acc.startsWith(keyword) then
           tokens.addOne(Token.Keyword(keyword))
-          acc.drop(keyword.length + 1)
+          acc.drop(keyword.length)
         else acc
 
     def tokenizeIdentifiers(chunk: String) =
       val id =
-        if chunk.headOption.exists(_.isDigit) 
-        then "" 
+        if chunk.headOption.exists(_.isDigit)
+        then ""
         else chunk.takeWhile(ch => ch.isLetterOrDigit || ch == '_')
 
       if id.nonEmpty then
@@ -70,6 +80,7 @@ object Tokenizer:
         chunk.drop(str.length + 2)
       else chunk
 
+    @tailrec
     def tokenizeAll(chunk: String): Unit =
       if chunk.isEmpty then ()
       else
@@ -120,7 +131,7 @@ object Tokenizer:
                 patterns match
                   case Nil =>
                     builder.addOne(remaining + chunk)
-                    traverse("", iterator.nextOption()) // TODO: make it actually lazy
+                    traverse("", iterator.nextOption()) // TODO: make it actually lazy, do not read the whole file
                   case (pattern, until) :: remainingPatterns =>
                     chunk.indexOf(pattern) match
                       // check other patterns for comments
