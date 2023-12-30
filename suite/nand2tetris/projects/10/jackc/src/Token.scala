@@ -2,6 +2,7 @@ package jackc
 
 import scala.compiletime.*
 
+/** A terminal element of the Jack language grammar */
 enum Token:
   /** All possible keywords and reserved words in the Jack language
     */
@@ -37,8 +38,6 @@ object Token:
   val PossibleSymbols = constValueTuple[PossibleSymbols]
 
   val allPossibleSymbols = Token.PossibleSymbols.toList.asInstanceOf[List[Tuple.Union[Token.PossibleSymbols]]]
-
-  // make regex that matches a single char from PossibleSymbols
 
   given XMLEncoder[Token] = XMLEncoder.from:
     case Token.Keyword(value) => XML.Element("keyword", XML.Text(value))
