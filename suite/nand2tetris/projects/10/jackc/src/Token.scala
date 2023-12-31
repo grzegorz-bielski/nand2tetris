@@ -56,6 +56,6 @@ object Token:
     case Token.IntConst(value)    => XML.Element("integerConstant", XML.Text(value.toString))
     case Token.StringConst(value) => XML.Element("stringConstant", XML.Text(value))
 
-  given XMLEncoder[Vector[Token]] with
-    def encode(value: Vector[Token]): XML =
-      XML.Element("tokens", value.map(XMLEncoder[Token].encode)*)
+  given XMLEncoder[Iterator[Token]] with
+    def encode(value: Iterator[Token]): XML =
+      XML.Element("tokens", value.toSeq.map(XMLEncoder[Token].encode)*)

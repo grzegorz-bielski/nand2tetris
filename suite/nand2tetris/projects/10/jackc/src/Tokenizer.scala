@@ -3,19 +3,21 @@ package jackc
 import scala.util.chaining.*
 import scala.annotation.tailrec
 import scala.util.Using
+import scala.io.Source
 
 import XMLEncoder.*
 
 object Tokenizer:
-  type Result = Either[Error, Vector[Token]]
+  type Result = Either[Error, Iterator[Token]]
 
-  /** Tokenize given file line by line, calling the `tokenizeAll` recursively on each line until all tokens are found
-    * and `chunk` is exhausted.
-    */
-  def tokenize(srcPath: os.Path): Result =
-    Using(scala.io.Source.fromFile(srcPath.toIO)):
-      _.getLines().stripComments.tokenize
-    .toEither.left.map(err => Error.TokenizerError(err.getMessage.nn)).joinRight
+  def tokenize(iterator: Iterator[String]): Iterator[Token] = iterator.stripComments.tokenize
+
+  def tokenize(srcPath: os.Path): Result = tokenize(srcPath)(identity)
+
+  def tokenize[A](srcPath: os.Path)(fn: Iterator[Token] => A): Either[Error, A] =
+    Using(Source.fromFile(srcPath.toIO)):
+      _.getLines().pipe(tokenize).pipe(fn)
+    .toEither.left.map(err => Error.TokenizerError(err.getMessage.nn))
 
   extension (iterator: Iterator[String])
     def stripComments: LazyList[String] =
@@ -51,48 +53,41 @@ object Tokenizer:
       go(LazyList.from[String](iterator), insideComment = false)
 
   extension (lines: LazyList[String])
-    def tokenize: Result =
-      val collector = TokensCollector()
+    /** Tokenize given file line by line, calling the `tokenizeAll` recursively on each line until all tokens are found
+      * and `chunk` is exhausted.
+      */
+    def tokenize: Iterator[Token] =
+      lines.toIterator
+        .flatMap(TokensCollector.tokenizeAll)
+        .flatten
 
-      @tailrec
-      def go(lines: LazyList[String]): Result =
-        lines match
-          case line #:: rest =>
-            collector.tokenizeAll(line) match
-              case err @ Error.TokenizerError(message) => Left(err)
-              case _                                   => go(rest)
-          case _ => Right(collector.collect())
+  private object TokensCollector:
+    def tokenizeAll(line: String): Iterator[Vector[Token]] =
+      Iterator.unfold(line -> ""):
+        case (chunk, prevChunk) =>
+          if chunk.isEmpty then None
+          else if chunk == prevChunk then
+            println(s"Could not tokenize: $line")
+            None
+          else
+            val (token, rest) = tokenizeKeywords(chunk)
+              .pipeT(tokenizeIdentifiers)
+              .pipeT(tokenizeSymbols)
+              .pipeT(tokenizeIntConst)
+              .pipeT(tokenizeStringConst)
 
-      go(lines)
+            Some(token, rest -> chunk)
 
-  private final class TokensCollector:
-    private val tokens = Vector.newBuilder[Token]
+    private def tokenizeKeywords(chunk: String) =
+      val builder = Vector.newBuilder[Token]
 
-    def collect() = tokens.result()
-
-    def tokenizeAll(line: String): Unit | Error =
-      @tailrec
-      def go(chunk: String, prevChunk: String): Unit | Error =
-        if chunk.isEmpty then ()
-        else if chunk == prevChunk then Error.TokenizerError(s"Could not tokenize: $line")
-        else
-          go(
-            tokenizeKeywords(chunk)
-              .pipe(tokenizeIdentifiers)
-              .pipe(tokenizeSymbols)
-              .pipe(tokenizeIntConst)
-              .pipe(tokenizeStringConst),
-            chunk
-          )
-
-      go(line, "")
-
-    private def tokenizeKeywords(chunk: String) = Token.allPossibleKeywords.foldLeft(chunk.dropWhile(_.isWhitespace)):
-      (acc, keyword) =>
+      val rest = Token.allPossibleKeywords.foldLeft(chunk.dropWhile(_.isWhitespace)): (acc, keyword) =>
         if acc.startsWith(keyword) then
-          tokens.addOne(Token.Keyword(keyword))
+          builder.addOne(Token.Keyword(keyword))
           acc.drop(keyword.length)
         else acc
+
+      builder.result() -> rest
 
     private def tokenizeIdentifiers(chunk: String) =
       val id =
@@ -100,32 +95,36 @@ object Tokenizer:
         then ""
         else chunk.takeWhile(ch => ch.isLetterOrDigit || ch == '_')
 
-      if id.nonEmpty then
-        tokens.addOne(Token.Identifier(id))
-        chunk.drop(id.length)
-      else chunk
+      if id.nonEmpty then Vector(Token.Identifier(id)) -> chunk.drop(id.length)
+      else Vector.empty -> chunk
 
     private def tokenizeSymbols(chunk: String) =
       val trimmed = chunk.dropWhile(_.isWhitespace)
       val symbols = trimmed.takeWhile(Token.allPossibleSymbols.contains)
 
-      symbols.foreach: symbol =>
-        tokens.addOne(Token.Symbol(symbol.asInstanceOf[Tuple.Union[Token.PossibleSymbols]]))
+      val tokens = symbols.toVector.map: symbol =>
+        Token.Symbol(symbol.asInstanceOf[Tuple.Union[Token.PossibleSymbols]])
 
-      trimmed.drop(symbols.length)
+      tokens -> trimmed.drop(symbols.length)
 
     private def tokenizeIntConst(chunk: String) =
       val digits = chunk.takeWhile(_.isDigit)
       val followingChar = chunk.lift(digits.length + 1) // do not allow <digits><identifier>
 
       if digits.nonEmpty && !followingChar.exists(_.isLetter) then
-        tokens.addOne(Token.IntConst(digits.toInt))
-        chunk.drop(digits.length)
-      else chunk
+        // tokens.addOne(Token.IntConst(digits.toInt))
+        Vector(Token.IntConst(digits.toInt)) -> chunk.drop(digits.length)
+      else Vector.empty -> chunk
 
     private def tokenizeStringConst(chunk: String) =
       if chunk.startsWith("\"") then
         val str = chunk.drop(1).takeWhile(_ != '"')
-        tokens.addOne(Token.StringConst(str))
-        chunk.drop(str.length + 2)
-      else chunk
+        Vector(Token.StringConst(str)) -> chunk.drop(str.length + 2)
+      else Vector.empty -> chunk
+
+  type TokenAcc = (Vector[Token], String)
+  extension (underlying: TokenAcc)
+    // like StateT flatMap
+    def pipeT(fn: String => TokenAcc): TokenAcc =
+      val res = fn(underlying._2)
+      (underlying._1 ++ res._1, res._2)
