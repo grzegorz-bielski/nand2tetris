@@ -7,15 +7,17 @@ object Grammar:
   // `class` className `{` classVarDec* subroutineDec* `}`
   final case class Class(name: String, classVarDecs: Seq[ClassVarDec], subroutines: Seq[SubroutineDec]) extends Grammar
   // (`static` | `field`) type varName (, varName)* `;`
-  final case class ClassVarDec(kind: "static" | "field", `type`: String, names: Seq[String]) extends Grammar
+  final case class ClassVarDec(kind: ClassVarKind, `type`: String, names: Seq[String]) extends Grammar
+  type ClassVarKind = "static" | "field"
   // (`constructor` | `function` | `method`) (`void` | type) subroutineName `(`parameterList`)` subroutineBody
   final case class SubroutineDec(
-      kind: "constructor" | "function" | "method",
+      kind: SubroutineKind,
       `type`: String,
       name: String,
       params: ParameterList,
       body: SubroutineBody
   ) extends Grammar
+  type SubroutineKind = "constructor" | "function" | "method"
   // ((type varName) (`,` type varName)*)?
   final case class ParameterList(params: Seq[Parameter]) extends Grammar
   // `{` varDec* statements `}`
