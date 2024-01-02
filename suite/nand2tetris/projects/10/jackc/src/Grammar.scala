@@ -21,7 +21,7 @@ object Grammar:
   // ((type varName) (`,` type varName)*)?
   final case class ParameterList(params: Seq[Parameter]) extends Grammar
   // `{` varDec* statements `}`
-  final case class SubroutineBody(varDecs: Seq[VarDec], statements: Seq[Statement]) extends Grammar
+  final case class SubroutineBody(varDecs: Seq[VarDec], statements: Statements) extends Grammar
   // `var` type varName (`,` varName)* `;`
   final case class VarDec(`type`: String, names: Seq[String]) extends Grammar
   // statement*
