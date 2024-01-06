@@ -7,6 +7,10 @@ object ResultT:
   inline def of[G](g: G): ResultT[G] = ResultT(done(Right(g)))
   inline def error[G](err: Error): ResultT[G] = ResultT(done(Left(err)))
 
+  def matches[G](value: G)(fn: PartialFunction[G, Unit]): ResultT[Unit] =
+    if fn.isDefinedAt(value) then ResultT.of(())
+    else ResultT.error(Error.PredicateFailed(s"Predicate failed on $value"))
+
   extension [G](r: ResultT[G])
     // fails on first error without accumulating
     def flatMap[G2](fn: G => ResultT[G2]): ResultT[G2] = ResultT:
@@ -21,7 +25,9 @@ object ResultT:
 
     def run: Either[Error, G] = r.value.result
 
+    def toOption: Option[G] = run.toOption 
+
     def withFilter(fn: G => Boolean): ResultT[G] = ResultT:
       r.value.flatMap:
         case Left(err) => done(Left(err))
-        case Right(g) => if fn(g) then done(Right(g)) else done(Left(Error.PredicateFailed(s"Predicate failed on $g")))
+        case Right(g)  => if fn(g) then done(Right(g)) else done(Left(Error.PredicateFailed(s"`withFilter` Predicate failed on $g")))

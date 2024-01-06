@@ -6,11 +6,11 @@ import scala.compiletime.*
 enum Token:
   /** All possible keywords and reserved words in the Jack language
     */
-  case Keyword(value: Tuple.Union[Token.PossibleKeywords])
+  case Keyword(value: Token.PossibleKeywordsU)
 
   /** All possible symbols in the Jack language
     */
-  case Symbol(value: Tuple.Union[Token.PossibleSymbols])
+  case Symbol(value: Token.PossibleSymbolsU)
 
   /** A sequence of letters, digits, underscore (_) that does not start with a digit
     */
@@ -28,16 +28,18 @@ object Token:
   // format: off
   type PossibleKeywords = 
     ("class", "constructor", "function", "method", "field", "static", "var", "int", "char", "boolean", "void", "true", "false", "null", "this", "let", "do", "if", "else", "while", "return")
+  type PossibleKeywordsU = Tuple.Union[PossibleKeywords]
   val PossibleKeywords = constValueTuple[PossibleKeywords]
   // format: on
 
-  val allPossibleKeywords = Token.PossibleKeywords.toList.asInstanceOf[List[Tuple.Union[Token.PossibleKeywords]]]
+  val allPossibleKeywords = Token.PossibleKeywords.toList.asInstanceOf[List[PossibleKeywordsU]]
 
   type PossibleSymbols =
     ('{', '}', '(', ')', '[', ']', '.', ',', ';', '+', '-', '*', '/', '&', '|', '<', '>', '=', '~')
+  type PossibleSymbolsU = Tuple.Union[PossibleSymbols]
   val PossibleSymbols = constValueTuple[PossibleSymbols]
 
-  val allPossibleSymbols = Token.PossibleSymbols.toList.asInstanceOf[List[Tuple.Union[Token.PossibleSymbols]]]
+  val allPossibleSymbols = Token.PossibleSymbols.toList.asInstanceOf[List[PossibleSymbolsU]]
 
   given XMLEncoder[Token] = XMLEncoder.from:
     case Token.Keyword(value) => XML.Element("keyword", XML.Text(value))

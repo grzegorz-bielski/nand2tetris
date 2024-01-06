@@ -31,33 +31,41 @@ object Grammar:
   // (expression(`,` expression)*)?
   final case class ExpressionList(expressions: Seq[Expression]) extends Grammar
 
-  enum Statement extends Grammar:
+  trait Statement extends Grammar
+  object Statement:
     // `let` varName (`[` expression `]`)? `=` expression `;`
-    case Let(name: String, index: Option[Expression], value: Expression)
+    final case class Let(name: String, index: Option[Expression], value: Expression) extends Statement
     // `if` `(` expression `)` `{` statements `}` (`else` `{` statements `}`)?
-    case If(condition: Expression, onTrue: Statements, onFalse: Option[Statements])
+    final case class If(condition: Expression, onTrue: Statements, onFalse: Option[Statements]) extends Statement
     // `while` `(` expression `)` `{` statements `}`
-    case While(condition: Expression, body: Statements)
+    final case class While(condition: Expression, body: Statements) extends Statement
     // `do` subroutineCall `;`
-    case Do(call: SubroutineCall)
+    final case class Do(call: SubroutineCall) extends Statement
     // `return` expression? `;`
-    case Return(value: Option[Expression])
+    final case class Return(value: Option[Expression]) extends Statement
 
-    // integerConstant | stringConstant | keywordConstant | varName | varName`[` expression `]` | subroutineCall | `(` expression `)` | unaryOp term
   enum Term extends Grammar:
+    // integerConstant
     case IntConst(value: Int)
+    // stringConstant
     case StringConst(value: String)
-    case KeywordConst(value: "true" | "false" | "null" | "this")
+    // keywordConstant
+    case KeywordConst(value: KeywordConstant)
+    // varName | varName`[` expression `]`
     case VarName(name: String, index: Option[Expression])
+    // subroutineCall
     case Call(call: SubroutineCall)
+    // `(` expression `)` 
     case Expr(value: Expression)
+    // unaryOp term
     case Op(op: UnaryOp, term: Term)
 
-  // subroutineName `(` expressionList `)` | (className | varName) `.` subroutineName `(` expressionList `)`
+  // subroutineName `(` expressionList `)` | 
+  // (className | varName) `.` subroutineName `(` expressionList `)`
   final case class SubroutineCall(receiver: Option[String], name: String, args: ExpressionList) extends Grammar
 
   final case class Parameter(`type`: String, name: String) extends Grammar
 
-  type Op = "+" | "-" | "*" | "/" | "&" | "|" | "<" | ">" | "="
-  type UnaryOp = "-" | "~"
+  type Op = '+' | '-' | '*' | '/' | '&' | '|' | '<' | '>' | '='
+  type UnaryOp = '-' | '~'
   type KeywordConstant = "true" | "false" | "null" | "this"
