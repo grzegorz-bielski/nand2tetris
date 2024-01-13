@@ -6,12 +6,15 @@ import Grammar as G
 import Token as T
 import scala.util.Try
 
+// refactoring ideas:
+// keep state of consumed tokens somewhere - possibly in ResultT, or in a separate class (Iterator?)
+
 object CompilationEngine:
-  def compile(tokens: Iterator[Token]): Either[Error, Grammar] =
+  def compile(tokens: Iterator[Token]): Either[Error, Grammar.Class] =
     Try:
       val res = compileClass(LazyList.from(tokens)).run
 
-      println(res)
+      // println(res)
 
       res
     .toEither.left

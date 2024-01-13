@@ -90,7 +90,7 @@
 <symbol> . </symbol>
 <identifier> printString </identifier>
 <symbol> ( </symbol>
-<stringConstant> THE AVERAGE IS  </stringConstant>
+<stringConstant> THE AVERAGE IS:  </stringConstant>
 <symbol> ) </symbol>
 <symbol> ; </symbol>
 <keyword> do </keyword>

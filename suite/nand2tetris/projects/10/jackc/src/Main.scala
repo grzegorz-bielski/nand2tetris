@@ -5,6 +5,7 @@
 package jackc
 
 import XMLEncoder.*
+import TokenXML.given
 
 // TODO:
 // 1. [x] Jack tokenizer
@@ -20,4 +21,4 @@ def run(source: String, dest: String) =
 def tokenizeToXML(source: String, dest: String) =
   Tokenizer.tokenize(os.Path(source)) match
     case Left(err)     => println(err)
-    case Right(tokens) => os.write.over(os.Path(dest), tokens.encode.toStringFormatted())
+    case Right(tokens) => os.write.over(os.Path(dest), tokens.encode.toStringFormatted)

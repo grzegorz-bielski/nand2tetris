@@ -29,7 +29,7 @@ class Main {
       /* and some more */ /* abv */ // cc
       //// cc
 
-      do Output.printString("THE AVERAGE IS ");
+      do Output.printString("THE AVERAGE IS: ");
       do Output.printInt(sum / length);
       do Output.println();
       return;

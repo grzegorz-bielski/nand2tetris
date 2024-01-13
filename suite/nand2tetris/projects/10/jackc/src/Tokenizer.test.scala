@@ -1,6 +1,7 @@
 package jackc
 
 import XMLEncoder.*
+import TokenXML.given
 
 class TokenizerSpec extends JackcSpec:
   test("should tokenize a class file correctly"):
@@ -30,7 +31,7 @@ class TokenizerSpec extends JackcSpec:
       )
 
   def tokenizeAt(path: os.Path) =
-    Tokenizer.tokenize(path)(_.encode.toStringFormatted(""))
+    Tokenizer.tokenize(path)(_.encode.toStringFormatted)
 
   def expectedAt(path: os.Path) =
     Right(os.read.lines(path).mkString("\n"))

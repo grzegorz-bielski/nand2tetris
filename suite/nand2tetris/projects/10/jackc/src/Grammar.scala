@@ -31,6 +31,7 @@ object Grammar:
   // (expression(`,` expression)*)?
   final case class ExpressionList(expressions: Seq[Expression]) extends Grammar
 
+  // not `enum` because in constructors we want to infer child type like `Let` or `If` instead of `Statement`
   trait Statement extends Grammar
   object Statement:
     // `let` varName (`[` expression `]`)? `=` expression `;`
@@ -55,12 +56,12 @@ object Grammar:
     case VarName(name: String, index: Option[Expression])
     // subroutineCall
     case Call(call: SubroutineCall)
-    // `(` expression `)` 
+    // `(` expression `)`
     case Expr(value: Expression)
     // unaryOp term
     case Op(op: UnaryOp, term: Term)
 
-  // subroutineName `(` expressionList `)` | 
+  // subroutineName `(` expressionList `)` |
   // (className | varName) `.` subroutineName `(` expressionList `)`
   final case class SubroutineCall(receiver: Option[String], name: String, args: ExpressionList) extends Grammar
 
