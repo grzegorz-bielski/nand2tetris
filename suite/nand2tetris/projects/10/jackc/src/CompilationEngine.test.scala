@@ -5,34 +5,38 @@ import GrammarXML.{*, given}
 
 class CompilationEngineSpec extends JackcSpec:
   test("should construct AST from a class file correctly"):
-    val a = compileAt(`10` / "ExpressionLessSquare" / "Main.jack")
+    // val a = compileAt(`10` / "ExpressionLessSquare" / "Main.jack")
 
-    os.write.over(`10` / "ExpressionLessSquare" / "MainC.xml", a.toOption.get)
-    os.write.over(`10` / "ExpressionLessSquare" / "MainC2.xml", expectedAt(`10` / "ExpressionLessSquare" / "Main.xml").toOption.get)
+    // os.write.over(`10` / "ExpressionLessSquare" / "MainC.xml", a.toOption.get)
+    // os.write.over(`10` / "ExpressionLessSquare" / "MainC2.xml", expectedAt(`10` / "ExpressionLessSquare" / "Main.xml").toOption.get)
 
-    // assertEquals(
-    //   compileAt(`10` / "ArrayTest" / "Main.jack"),
-    //   expectedAt(`10` / "ArrayTest" / "Main.xml")
-    // )
+    assertEquals(
+      compileAt(`10` / "ArrayTest" / "Main.jack"),
+      expectedAt(`10` / "ArrayTest" / "Main.xml")
+    )
+
+    // val exprLess = compileAt(`10` / "ExpressionLessSquare" / "Main.jack")
+
+    // println(exprLess)
 
 
-    // square("ExpressionLessSquare")
+    square("ExpressionLessSquare")
 
-    // def square(folder: String) =
-    //   assertEquals(
-    //     compileAt(`10` / folder / "Main.jack"),
-    //     expectedAt(`10` / folder / "Main.xml")
-    //   )
+    def square(folder: String) =
+      assertEquals(
+        compileAt(`10` / folder / "Main.jack"),
+        expectedAt(`10` / folder / "Main.xml")
+      )
 
-    //   // assertEquals(
-    //   //   compileAt(`10` / folder / "Square.jack"),
-    //   //   expectedAt(`10` / folder / "SquareT.xml")
-    //   // )
+      // assertEquals(
+      //   compileAt(`10` / folder / "Square.jack"),
+      //   expectedAt(`10` / folder / "SquareT.xml")
+      // )
 
-    //   // assertEquals(
-    //   //   compileAt(`10` / folder / "SquareGame.jack"),
-    //   //   expectedAt(`10` / folder / "SquareGameT.xml")
-    //   // )
+      // assertEquals(
+      //   compileAt(`10` / folder / "SquareGame.jack"),
+      //   expectedAt(`10` / folder / "SquareGameT.xml")
+      // )
 
 
   def compileAt(path: os.Path) =

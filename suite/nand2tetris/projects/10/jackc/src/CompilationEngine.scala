@@ -28,10 +28,10 @@ object CompilationEngine:
       case Token.Keyword("class") #:: Token.Identifier(name) #:: Token.Symbol('{') #:: rest =>
         for
           (classVarLength, classVarDecs) <- compileClassVarDecs(rest)
-          (subroutinesLength, subroutines) <- compileSubroutines(rest)
+          (subroutinesLength, subroutines) <- compileSubroutines(rest.drop(classVarLength))
           length = classVarLength + subroutinesLength
-          _ <- ResultT.matches(rest.drop(length).head):
-            case T.Symbol('}') => ()
+          _ <- ResultT.matches("compileClass", rest.drop(length)):
+            case T.Symbol('}') #:: _ => ()
         yield G.Class(name, classVarDecs, subroutines)
       case other => unexpectedToken(other, "class declaration")
 
@@ -41,7 +41,8 @@ object CompilationEngine:
       tokens match
         case T.Keyword(kind: G.ClassVarKind) #:: T.Keyword(tpe) #:: rest =>
           val (length, names) = collectVars(rest)
-          go(rest.drop(length), (acc._1 + length, acc._2 :+ G.ClassVarDec(kind, tpe, names)))
+          val nextLength = length + 2 // kind + tpe
+          go(rest.drop(nextLength), (acc._1 + nextLength, acc._2 :+ G.ClassVarDec(kind, tpe, names)))
         case _ => ResultT.of(acc)
     go(tokens, (0, Vector.empty))
 
@@ -56,7 +57,7 @@ object CompilationEngine:
             (bodyLength, body) <- compileSubroutineBody(rest.drop(paramsLength))
             length = paramsLength + bodyLength + 4 // kind + tpe + name + `(`
             subroutines <- go(
-              rest.drop(length),
+              tokens.drop(length),
               (acc._1 + length, acc._2 :+ G.SubroutineDec(kind, tpe, name, params, body))
             )
           yield subroutines
@@ -83,10 +84,11 @@ object CompilationEngine:
         for
           (varDecsLength, varDecs) <- compileVarDecs(rest)
           (statementsLength, statements) <- compileStatements(rest.drop(varDecsLength))
-          length = varDecsLength + statementsLength // + 1 for the `}`
-          _ <- ResultT.matches(rest.drop(length)):
+          length = varDecsLength + statementsLength
+          _ <- ResultT.matches("compileSubroutineBody", rest.drop(length)):
             case T.Symbol('}') #:: _ => ()
-        yield length + 1 -> G.SubroutineBody(varDecs, statements)
+          _length = length + 2 // + 2 for the `{` + `}`
+        yield _length -> G.SubroutineBody(varDecs, statements)
       case other => unexpectedToken(other, "subroutine body")
 
   private def compileVarDecs(tokens: LazyList[Token]): ResultT[(Int, Vector[G.VarDec])] =
@@ -140,7 +142,7 @@ object CompilationEngine:
         for
           (indexExprLength, indexExpr) <- compileExpression(exprTokens)
           afterIndexExpr = rest.drop(exprTokens.length + 1)
-          _ <- ResultT.matches(afterIndexExpr):
+          _ <- ResultT.matches("compileLet", afterIndexExpr):
             case T.Symbol('=') #:: _ => ()
           beforeAssignment = afterIndexExpr.drop(1).takeWhile(_ != T.Symbol(';'))
           (exprLength, expression) <- compileExpression(beforeAssignment)
@@ -161,7 +163,7 @@ object CompilationEngine:
                   length -> G.Statement.If(ifExpr, ifStatement, Some(elseStatement))
             case _ =>
               val length = ifExprLength + ifStmtLength + 5 // if + ( + ) + { + }
-              ResultT.of(1 -> G.Statement.If(ifExpr, ifStatement, None))
+              ResultT.of(length -> G.Statement.If(ifExpr, ifStatement, None))
         yield res
       case other => unexpectedToken(other, "if statement")
 
@@ -282,6 +284,7 @@ object CompilationEngine:
 
       Error.UnexpectedToken(msg)
 
+  // TODO: should allow nested blocks
   private def compileBetween[R](
       from: T.PossibleSymbolsU,
       to: T.PossibleSymbolsU,

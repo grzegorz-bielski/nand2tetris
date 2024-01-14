@@ -7,9 +7,9 @@ object ResultT:
   inline def of[G](g: G): ResultT[G] = ResultT(done(Right(g)))
   inline def error[G](err: Error): ResultT[G] = ResultT(done(Left(err)))
 
-  def matches[G](value: G)(fn: PartialFunction[G, Unit]): ResultT[Unit] =
+  def matches[G](hint: String, value: G)(fn: PartialFunction[G, Unit]): ResultT[Unit] =
     if fn.isDefinedAt(value) then ResultT.of(())
-    else ResultT.error(Error.PredicateFailed(s"Predicate failed on $value"))
+    else ResultT.error(Error.PredicateFailed(s"$hint predicate failed on $value"))
 
   extension [G](r: ResultT[G])
     // fails on first error without accumulating

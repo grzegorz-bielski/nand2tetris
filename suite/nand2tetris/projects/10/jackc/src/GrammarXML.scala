@@ -68,11 +68,11 @@ object GrammarXML:
       ) :+ XMLEncoder[G.Statements].encode(s.onTrue) :+
         T.Symbol('}').encode
 
-      s.onFalse.fold(body): f =>
+      val _body = s.onFalse.fold(body): f =>
         body :+ T.Keyword("else").encode :+ T.Symbol('{').encode :+
           XMLEncoder[G.Statements].encode(f) :+ T.Symbol('}').encode
 
-      XML.Element("ifStatement", body*)
+      XML.Element("ifStatement", _body*)
     case s: G.Statement.While =>
       val body = Seq(
         T.Keyword("while").encode,
