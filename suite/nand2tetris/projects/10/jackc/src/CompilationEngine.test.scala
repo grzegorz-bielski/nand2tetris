@@ -5,22 +5,13 @@ import GrammarXML.{*, given}
 
 class CompilationEngineSpec extends JackcSpec:
   test("should construct AST from a class file correctly"):
-    // val a = compileAt(`10` / "ExpressionLessSquare" / "Main.jack")
-
-    // os.write.over(`10` / "ExpressionLessSquare" / "MainC.xml", a.toOption.get)
-    // os.write.over(`10` / "ExpressionLessSquare" / "MainC2.xml", expectedAt(`10` / "ExpressionLessSquare" / "Main.xml").toOption.get)
-
     assertEquals(
       compileAt(`10` / "ArrayTest" / "Main.jack"),
       expectedAt(`10` / "ArrayTest" / "Main.xml")
     )
 
-    // val exprLess = compileAt(`10` / "ExpressionLessSquare" / "Main.jack")
-
-    // println(exprLess)
-
-
     square("ExpressionLessSquare")
+    // square("Square")
 
     def square(folder: String) =
       assertEquals(
@@ -28,16 +19,25 @@ class CompilationEngineSpec extends JackcSpec:
         expectedAt(`10` / folder / "Main.xml")
       )
 
-      // assertEquals(
-      //   compileAt(`10` / folder / "Square.jack"),
-      //   expectedAt(`10` / folder / "SquareT.xml")
-      // )
+      assertEquals(
+        compileAt(`10` / folder / "Square.jack"),
+        expectedAt(`10` / folder / "Square.xml")
+      )
 
-      // assertEquals(
-      //   compileAt(`10` / folder / "SquareGame.jack"),
-      //   expectedAt(`10` / folder / "SquareGameT.xml")
-      // )
+      assertEquals(
+        compileAt(`10` / folder / "SquareGame.jack"),
+        expectedAt(`10` / folder / "SquareGame.xml")
+      )
 
+
+  def compileDebug(path: os.Path) = 
+    lazy val compiled = compileAt(path)
+    lazy val expected = expectedAt(path / os.up / path.last.replace(".jack", ".xml").nn)
+
+    println(compiled)
+
+    os.write.over(path / os.up / path.last.replace(".jack", "C.xml").nn, compiled.toOption.get)
+    os.write.over(path / os.up / path.last.replace(".jack", "C2.xml").nn, expected.toOption.get)
 
   def compileAt(path: os.Path) =
     Tokenizer.tokenize(path)(CompilationEngine.compile).joinRight.map(_.encode.toStringFormatted)

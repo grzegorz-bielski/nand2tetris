@@ -10,7 +10,10 @@ import TokenXML.given
 object GrammarXML:
 
   given XMLEncoder[G.ExpressionList] = XMLEncoder.from: g =>
-    XML.Element("expressionList", g.expressions.map(XMLEncoder[G.Expression].encode)*)
+    XML.Element(
+      "expressionList",
+      g.expressions.map(XMLEncoder[G.Expression].encode).intersperse(T.Symbol(',').encode)*
+    )
 
   given XMLEncoder[G.Term] = XMLEncoder.from: g =>
     val body = g match

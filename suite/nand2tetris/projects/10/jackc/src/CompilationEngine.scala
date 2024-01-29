@@ -38,19 +38,21 @@ object CompilationEngine:
   private def compileClassVarDecs(tokens: LazyList[Token]): ResultT[(Int, Vector[G.ClassVarDec])] =
     @tailrec
     def go(tokens: LazyList[Token], acc: (Int, Vector[G.ClassVarDec])): ResultT[(Int, Vector[G.ClassVarDec])] =
+      println("compileClassVarDecs" -> (tokens.take(10).toList, acc))
       tokens match
-        case T.Keyword(kind: G.ClassVarKind) #:: T.Keyword(tpe) #:: rest =>
+        case T.Keyword(kind: G.ClassVarKind) #:: (tpe: (Token.Keyword | Token.Identifier)) #:: rest =>
           val (length, names) = collectVars(rest)
           val nextLength = length + 2 // kind + tpe
-          go(rest.drop(nextLength), (acc._1 + nextLength, acc._2 :+ G.ClassVarDec(kind, tpe, names)))
+          go(tokens.drop(nextLength), (acc._1 + nextLength, acc._2 :+ G.ClassVarDec(kind, typeValue(tpe), names)))
         case _ => ResultT.of(acc)
     go(tokens, (0, Vector.empty))
 
   private def compileSubroutines(tokens: LazyList[Token]): ResultT[(Int, Vector[G.SubroutineDec])] =
     def go(tokens: LazyList[Token], acc: (Int, Vector[G.SubroutineDec])): ResultT[(Int, Vector[G.SubroutineDec])] =
+      println("compileSubroutines" -> tokens.take(10).toList)
       tokens match
         // format: off
-        case T.Keyword(kind: G.SubroutineKind) #:: Token.Keyword(tpe) #:: T.Identifier(name) #:: T.Symbol('(') #:: rest =>
+        case T.Keyword(kind: G.SubroutineKind) #:: (tpe: (Token.Keyword | Token.Identifier)) #:: T.Identifier(name) #:: T.Symbol('(') #:: rest =>
         // format: on
           for
             (paramsLength, params) <- compileParameterList(rest)
@@ -58,7 +60,7 @@ object CompilationEngine:
             length = paramsLength + bodyLength + 4 // kind + tpe + name + `(`
             subroutines <- go(
               tokens.drop(length),
-              (acc._1 + length, acc._2 :+ G.SubroutineDec(kind, tpe, name, params, body))
+              (acc._1 + length, acc._2 :+ G.SubroutineDec(kind, typeValue(tpe), name, params, body))
             )
           yield subroutines
         case _ => ResultT.of(acc)
@@ -154,13 +156,24 @@ object CompilationEngine:
       case T.Keyword("if") #:: rest =>
         for
           (afterExpr, (ifExprLength, ifExpr)) <- compileBetween('(', ')', compileExpression)(rest)
-          (afterStatement, (ifStmtLength, ifStatement)) <- compileBetween('{', '}', compileStatements)(afterExpr)
+          _ = println(afterExpr.take(10).toList)
+          _ <- ResultT.matches("if {", afterExpr):
+            case T.Symbol('{') #:: _ => ()
+          (ifStmtLength, ifStatement) <- compileStatements(afterExpr.drop(1))
+          _ <- ResultT.matches("if }", afterExpr.drop(1 + ifStmtLength)):
+            case T.Symbol('}') #:: _ => ()
+          afterStatement = afterExpr.drop(ifStmtLength + 2) // + 2 for the { + }
+
           res <- afterStatement match
             case T.Keyword("else") #:: afterElse =>
-              compileBetween('{', '}', compileStatements)(afterElse).map:
-                case (_, (elseStmtLength, elseStatement)) =>
-                  val length = ifExprLength + ifStmtLength + elseStmtLength + 8 // if + ( + ) + { + } + else + { + }
-                  length -> G.Statement.If(ifExpr, ifStatement, Some(elseStatement))
+              for
+                _ <- ResultT.matches("else {", afterElse):
+                  case T.Symbol('{') #:: _ => ()
+                (elseStmtLength, elseStatement) <- compileStatements(afterElse.drop(1))
+                _ <- ResultT.matches("else }", afterElse.drop(1 + elseStmtLength)):
+                  case T.Symbol('}') #:: _ => ()
+                length = ifExprLength + ifStmtLength + elseStmtLength + 8 // if + ( + ) + { + } + else + { + }
+              yield length -> G.Statement.If(ifExpr, ifStatement, Some(elseStatement))
             case _ =>
               val length = ifExprLength + ifStmtLength + 5 // if + ( + ) + { + }
               ResultT.of(length -> G.Statement.If(ifExpr, ifStatement, None))
@@ -172,8 +185,15 @@ object CompilationEngine:
       case T.Keyword("while") #:: rest =>
         for
           (afterExpr, (exprLength, expr)) <- compileBetween('(', ')', compileExpression)(rest)
-          (afterStmt, (stmtLength, stmt)) <- compileBetween('{', '}', compileStatements)(afterExpr)
-          length = exprLength + stmtLength + 5 // while + ( + ) + { + }
+
+
+          _ <- ResultT.matches("compileWhile {", afterExpr):
+            case T.Symbol('{') #:: _ => ()
+          (stmtLength, stmt) <- compileStatements(afterExpr.drop(1))
+          _length = exprLength + stmtLength + 4 // while + ( + ) + {
+          _ <- ResultT.matches("compileWhile }", tokens.drop(_length)):
+            case T.Symbol('}') #:: _ => ()
+          length = _length + 1 // + }
         yield length -> G.Statement.While(expr, stmt)
       case other => unexpectedToken(other, "while statement")
 
@@ -284,7 +304,7 @@ object CompilationEngine:
 
       Error.UnexpectedToken(msg)
 
-  // TODO: should allow nested blocks
+  // does not allow nesting
   private def compileBetween[R](
       from: T.PossibleSymbolsU,
       to: T.PossibleSymbolsU,
@@ -307,3 +327,24 @@ object CompilationEngine:
         ResultT.of(within -> rest.drop(length))
       case other =>
         unexpectedToken(other, s"$from...$to")
+
+
+  private def compileBetween2[R](
+      from: T.PossibleSymbolsU,
+      to: T.PossibleSymbolsU,
+      fn: LazyList[Token] => ResultT[(Int, R)]
+  )(tokens: LazyList[Token]) = 
+    for
+      _ <- ResultT.matches(from.toString, tokens):
+            case T.Symbol(from) #:: _ => ()
+      (resLength, res) <- fn(tokens.drop(1))
+      _ <- ResultT.matches(to.toString, tokens.drop(1 + resLength)):
+        case T.Symbol(to) #:: _ => ()
+      length = resLength + 2 // + 2 for the from + to
+    yield length -> res
+
+
+  private def typeValue(tpe: Token.Keyword | Token.Identifier) = 
+    tpe match
+      case T.Keyword(value)    => value
+      case T.Identifier(value) => value
