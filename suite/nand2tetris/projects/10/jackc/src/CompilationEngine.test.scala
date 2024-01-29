@@ -11,7 +11,7 @@ class CompilationEngineSpec extends JackcSpec:
     )
 
     square("ExpressionLessSquare")
-    // square("Square")
+    square("Square")
 
     def square(folder: String) =
       assertEquals(
