@@ -31,7 +31,7 @@ class TokenizerSpec extends JackcSpec:
       )
 
   def tokenizeAt(path: os.Path) =
-    Tokenizer.tokenize(path)(_.encode.toStringFormatted)
+    Tokenizer.tokenizeAt(path)(_.encode.toStringFormatted)
 
   def expectedAt(path: os.Path) =
     Right(os.read.lines(path).mkString("\n"))

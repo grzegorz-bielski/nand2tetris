@@ -4,20 +4,25 @@ import scala.util.chaining.*
 import scala.annotation.tailrec
 import scala.util.Using
 import scala.io.Source
+import scala.util.Try
 
 import XMLEncoder.*
 
 object Tokenizer:
   type Result = Either[Error, Iterator[Token]]
 
-  def tokenize(iterator: Iterator[String]): Iterator[Token] = iterator.stripComments.tokenize
+  def tokenize(iterator: Iterator[String]): Result = 
+    Try(unsafeTokenize(iterator)).asTokenizerErrors
 
-  def tokenize(srcPath: os.Path): Result = tokenize(srcPath)(identity)
+  def unsafeTokenize(iterator: Iterator[String]): Iterator[Token] = iterator.stripComments.tokenize
 
-  def tokenize[A](srcPath: os.Path)(fn: Iterator[Token] => A): Either[Error, A] =
+  def tokenizeAt(srcPath: os.Path): Result = tokenizeAt(srcPath)(identity)
+
+  // TODO: Move it to `test` scope as debug extension method. Tokenizer should not read files.
+  def tokenizeAt[A](srcPath: os.Path)(fn: Iterator[Token] => A): Either[Error, A] =
     Using(Source.fromFile(srcPath.toIO)):
-      _.getLines().pipe(tokenize).pipe(fn)
-    .toEither.left.map(err => Error.TokenizerError(err.getMessage.nn))
+      _.getLines().pipe(unsafeTokenize).pipe(fn)
+    .asTokenizerErrors
 
   extension (iterator: Iterator[String])
     def stripComments: LazyList[String] =
@@ -128,3 +133,6 @@ object Tokenizer:
     def pipeT(fn: String => TokenAcc): TokenAcc =
       val res = fn(underlying._2)
       (underlying._1 ++ res._1, res._2)
+
+  extension [A](underlying: Try[A])
+    def asTokenizerErrors: Either[Error, A] = underlying.toEither.left.map(err => Error.TokenizerError(err.getMessage.nn))

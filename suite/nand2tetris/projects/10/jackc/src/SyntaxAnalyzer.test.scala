@@ -3,7 +3,7 @@ package jackc
 import XMLEncoder.*
 import GrammarXML.{*, given}
 
-class CompilationEngineSpec extends JackcSpec:
+class SyntaxAnalyzerSpec extends JackcSpec:
   test("should construct AST from a class file correctly"):
     assertEquals(
       compileAt(`10` / "ArrayTest" / "Main.jack"),
@@ -40,7 +40,7 @@ class CompilationEngineSpec extends JackcSpec:
     os.write.over(path / os.up / path.last.replace(".jack", "C2.xml").nn, expected.toOption.get)
 
   def compileAt(path: os.Path) =
-    Tokenizer.tokenize(path)(CompilationEngine.compile).joinRight.map(_.encode.toStringFormatted)
+    Tokenizer.tokenizeAt(path)(SyntaxAnalyzer.analyze).joinRight.map(_.encode.toStringFormatted)
 
   def expectedAt(path: os.Path) =
     Right(os.read.lines(path).map(_.trim.nn).mkString("\n"))
