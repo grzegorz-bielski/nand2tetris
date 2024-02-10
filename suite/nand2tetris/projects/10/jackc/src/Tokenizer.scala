@@ -117,7 +117,6 @@ object Tokenizer:
       val followingChar = chunk.lift(digits.length + 1) // do not allow <digits><identifier>
 
       if digits.nonEmpty && !followingChar.exists(_.isLetter) then
-        // tokens.addOne(Token.IntConst(digits.toInt))
         Vector(Token.IntConst(digits.toInt)) -> chunk.drop(digits.length)
       else Vector.empty -> chunk
 

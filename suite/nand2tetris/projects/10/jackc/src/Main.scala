@@ -20,8 +20,9 @@ def run(source: String) =
   else if isValidPath(srcPath) then compileClassAt(srcPath)
   else println(s"Invalid path: $srcPath")
 
-private def isValidPath(path: os.Path) = path.last.startsWith(".") && path.last.endsWith(".jack")
+private def isValidPath(path: os.Path) = !path.last.startsWith(".") && path.last.endsWith(".jack")
 
+// assumes `source` is a valid path to a single file
 private def compileClassAt(source: os.Path): Unit = 
   Using(Source.fromFile(source.toIO)): 
     _.getLines().pipe(compileClass)
@@ -33,5 +34,5 @@ private def compileClassAt(source: os.Path): Unit =
     code => os.write.over(source / source.last.replace(".jack", ".vm").nn, code.toString)
   )
 
-private def compileClass(lines: Iterator[String]): Either[Error, VMCode] = 
+private def compileClass(lines: Iterator[String]): Either[Error, Vector[VMCode]] = 
   Tokenizer.tokenize(lines).flatMap(SyntaxAnalyzer.analyze).flatMap(CompilationEngine.compile)

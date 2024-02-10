@@ -2,37 +2,43 @@ package jackc
 
 import Grammar as G
 
+/** Compiles Jack AST to Hack VM code
+  */
 object CompilationEngine:
-    trait VMCode
+  trait VMCode
 
-    def compile(ast: Grammar.Class): Either[Error, VMCode] = 
-        val classScope = SymbolsTable.empty.pushScope
+  type Context = SymbolsTable
 
-        val G.Class(_, varsDec, subroutines) = ast
-            
-            // Context = SymbolsTable
+  def compile(ast: Grammar.Class): Either[Error, Vector[VMCode]] =
+    val G.Class(_, varsDec, subroutines) = ast
 
-            // TODO: use ResultT[(Context, VMCode)]
+    given Context = varsDec.foldLeft(SymbolsTable.empty.pushScope):
+      case scope -> G.ClassVarDec(kind, tpe, names) =>
+        names.foldLeft(scope): (scope, name) =>
+          scope.addSymbol:
+            kind match
+              case "field"  => SymbolsTable.Entry.Field(name, 0)
+              case "static" => SymbolsTable.Entry.Static(name, 0)
 
-            // varsDec.foldLeft(classScope): 
-            //     case scope -> G.ClassVarDec(kind, tpe, names) =>
-            //         val nextScope = names.foldLeft(scope): (scope, name) => 
-            //             scope.addSymbol:
-            //                 kind match
-            //                     case "field" => SymbolsTable.Entry.Field(name, 0)
-            //                     case "static" => SymbolsTable.Entry.Static(name, 0)
+    def compileSubroutines(subroutines: Vector[G.SubroutineDec], acc: Vector[VMCode]): ResultT[Vector[VMCode]] =
+      subroutines match
+        case head +: tail => compileSubroutine(head).flatMap(h => compileSubroutines(tail, acc ++ h))
+        case _            => ResultT.of(acc)
 
-            //         ???
+    compileSubroutines(subroutines.toVector, Vector.empty).run
 
+  def compileSubroutine(ast: G.SubroutineDec)(using ctx: Context): ResultT[Vector[VMCode]] =
+    val subroutineScope = ctx.pushScope
 
-            ???
-                    
-                    // entries.foreach(classScope.addSymbol)
-        
+    // TODO: init subroutine scope and write vm code
 
-// TODO:
+    ???
+
+// Symbols table usage
 // - on every identifier declaration append it to the symbol table
 // - on every identifier usage check if it's in the symbol table
+// - on every class defs and subroutine defs create a new scope
+// - on leaving a class def or subroutine def pop the scope
 final case class SymbolsTable(scopes: List[Map[String, SymbolsTable.Entry]]) extends AnyVal:
   def pushScope: SymbolsTable = copy(scopes = Map.empty :: scopes)
   def popScope: SymbolsTable = copy(scopes = scopes.tail)

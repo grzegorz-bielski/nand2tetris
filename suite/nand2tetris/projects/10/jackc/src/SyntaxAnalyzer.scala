@@ -10,6 +10,9 @@ import java.security.KeyStore.Entry
 // refactoring ideas:
 // keep state of consumed tokens somewhere - possibly in ResultT, or in a separate class (Iterator?)
 
+/**
+  * Analyzes tokens stream and produces an AST.
+  */
 object SyntaxAnalyzer:
   def analyze(tokens: Iterator[Token]): Either[Error, Grammar.Class] =
     Try:
