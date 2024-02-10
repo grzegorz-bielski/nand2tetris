@@ -8,7 +8,7 @@ import scala.util.Try
 import java.security.KeyStore.Entry
 
 // refactoring ideas:
-// keep state of consumed tokens somewhere - possibly in ResultT, or in a separate class (Iterator?)
+// keep state of consumed tokens somewhere - possibly in StateT, or in a separate class (Iterator?)
 
 /**
   * Analyzes tokens stream and produces an AST.
