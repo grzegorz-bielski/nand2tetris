@@ -3,6 +3,9 @@ package jackc
 import Grammar as G
 import scala.util.chaining.*
 
+import SymbolsTable.Entry.*
+import java.util.concurrent.atomic.AtomicInteger
+
 /** Compiles Jack AST to Hack VM code
   */
 object CompilationEngine:
@@ -10,10 +13,12 @@ object CompilationEngine:
   object VMCode:
     def apply(code: String): VMCode = code
 
-  extension (sc: StringContext) def hvm(args: Any*): VMCode = sc.s(args: _*).pipe(VMCode.apply)
+  extension (sc: StringContext) def hvm(args: Any*): VMCode = sc.s(args*).pipe(VMCode.apply)
 
-  // type Context = SymbolsTable
-  final case class Context(scope: SymbolsTable, className: String)
+  // `mutableRunningLabelCounter` is the only peace of mutable state in the whole program
+  // it's used to generate unique labels for `if-goto` and `goto` vm commands
+  // alternatively, we could use a `UUID`, or store the counter in the `Context` and pass it around using `StateT`
+  private final case class Context(scope: SymbolsTable, className: String, mutableRunningLabelCounter: AtomicInteger)
 
   def compile(ast: Grammar.Class): Either[Error, Vector[VMCode]] =
     val G.Class(name, varsDec, subroutines) = ast
@@ -23,10 +28,10 @@ object CompilationEngine:
         names.foldLeft(scope): (scope, name) =>
           scope.addSymbol:
             kind match
-              case "field"  => SymbolsTable.Entry.Field(name)
-              case "static" => SymbolsTable.Entry.Static(name)
+              case "field"  => Field(name)
+              case "static" => Static(name)
 
-    given Context = Context(classScope, name)
+    given Context = Context(classScope, name, AtomicInteger(0))
 
     def compileSubroutines(subroutines: List[G.SubroutineDec], acc: Vector[VMCode]): ResultT[Vector[VMCode]] =
       subroutines match
@@ -55,26 +60,20 @@ object CompilationEngine:
         case "method" =>
           for
             metCode <- ResultT.of:
-              code ++ Vector(
-                // aligns the virtual memory segment `this` with the base address of the object on which the method was called
-                hvm"push argument 0",
-                hvm"pop pointer 0"
-              )
+              // aligns the virtual memory segment `this` with the
+              // base address of the object on which the method was called
+              code :+ hvm"push argument 0" :+ hvm"pop pointer 0"
             stmtsCode <- compileStatements(statements)
           yield metCode ++ stmtsCode
 
         case "constructor" =>
           for
             consCode <- ResultT.of:
-              code ++ Vector(
-                // allocates memory of `fieldsCount` 16-bit words and aligns the virtual memory segment `this` with the base address of newly allocated block
-                hvm"push constant ${ctx.scope.fieldsCount}",
-                hvm"call Memory.alloc 1" // built-in OS function that allocates heap memory
-              )
+              // allocates memory of `fieldsCount` 16-bit words
+              // and aligns the virtual memory segment `this` with the base address of newly allocated block
+              code :+ hvm"push constant ${ctx.scope.fieldsCount}" :+ hvm"call Memory.alloc 1" // built-in OS function that allocates heap memory
             stmtsCode <- compileStatements(statements)
-          yield consCode ++
-            stmtsCode :+
-            hvm"pop pointer 0" // returns to the caller base address of the newly created object
+          yield consCode ++ stmtsCode :+ hvm"pop pointer 0" // returns to the caller base address of the newly created object
 
         case "function" => compileStatements(statements)
 
@@ -86,47 +85,74 @@ object CompilationEngine:
           code <- compileStatement(statement)
         yield acc ++ code
 
-  private def compileStatement(statement: G.Statement)(using ctx: Context): ResultT[Vector[VMCode]] = ???
+  private def compileStatement(statement: G.Statement)(using ctx: Context): ResultT[Vector[VMCode]] =
+    statement match
+      case G.Statement.Let(name, None, value) =>
+        for
+          exprValue <- compileExpression(value)
+          popValue <- ctx.scope.symbolCmd(name, "pop")
+        yield exprValue :+ popValue
 
-// Symbols table usage
-// - on every identifier declaration append it to the symbol table
-// - on every identifier usage check if it's in the symbol table
-// - on every class defs and subroutine defs create a new scope
-// - on leaving a class def or subroutine def pop the scope
-final case class SymbolsTable(
-    scopes: List[Map[String, (SymbolsTable.Entry, Int)]],
-    fieldsCount: Int,
-    staticsCount: Int,
-    localsCount: Int
-):
-  import SymbolsTable.*
+      // if there is index / offset - assume it's an array
+      case G.Statement.Let(name, Some(offsetExpr), value) =>
+        for
+          pushBaseAddr <- ctx.scope.symbolCmd(name, "push")
+          pushOffset <- compileExpression(offsetExpr)
+          pushValue <- compileExpression(value)
+        yield (pushBaseAddr +: pushOffset :+ hvm"add") ++ // push `baseAddr + offset` to the top of the stack
+          pushValue :+ // push exor value to the top of the stack
+          hvm"pop temp 0" :+ // safe `value` from expr to set in temp 0
+          hvm"pop pointer 1" :+ // set the base address `that` to the address of the array[baseAddr + offset]
+          hvm"push temp 0" :+ // push the `value` back to the stack
+          hvm"pop that 0" // set the `that` at 0 to the `value`
 
-  def pushScope: SymbolsTable = copy(scopes = Map.empty :: scopes)
-  def popScope: SymbolsTable = copy(scopes = scopes.tail)
+      // TODO: running counter for labels
+      case G.Statement.If(condition, onTrue, onFalse) =>
+        val suffix = ctx.mutableRunningLabelCounter.getAndIncrement
 
-  def addSymbol(entry: SymbolsTable.Entry): SymbolsTable =
-    def nextScopes(index: Int) = scopes match
-      case head :: tail => (head + (entry.name -> (entry, index))) :: tail
-      case _            => Map(entry.name -> (entry, index)) :: Nil
+        for
+          conditionCode <- compileExpression(condition)
+          onTrueCode <- compileStatements(onTrue)
+          onFalseCode <- onFalse.fold(ResultT.of(Vector.empty))(compileStatements)
+        yield (
+          conditionCode :+
+            hvm"not" :+
+            hvm"if-goto IF_TRUE$suffix" :+
+            hvm"goto IF_FALSE$suffix" :+
+            hvm"label IF_TRUE$suffix"
+        ) ++ (
+          if onFalse.isEmpty
+          then onTrueCode :+ hvm"label IF_FALSE$suffix"
+          else (onTrueCode :+ hvm"goto IF_END$suffix") ++ (hvm"label IF_FALSE$suffix" +: onFalseCode :+ hvm"label IF_END$suffix")
+        )
 
-    entry match
-      case Entry.Field(_)  => copy(fieldsCount = fieldsCount + 1, scopes = nextScopes(fieldsCount))
-      case Entry.Static(_) => copy(staticsCount = staticsCount + 1, scopes = nextScopes(staticsCount))
-      case Entry.Local(_)  => copy(localsCount = localsCount + 1, scopes = nextScopes(localsCount))
+      case G.Statement.While(condition, body) =>
+        val suffix = ctx.mutableRunningLabelCounter.getAndIncrement
 
-  def getSymbol(name: String): Option[(SymbolsTable.Entry, Int)] =
-    scopes.flatMap(_.get(name)).headOption
+        for
+          conditionCode <- compileExpression(condition)
+          bodyCode <- compileStatements(body)
+        yield (hvm"label WHILE_EXP$suffix" +: conditionCode :+ hvm"not" :+ hvm"if-goto WHILE_END$suffix") ++
+          (bodyCode :+ hvm"goto WHILE_EXP$suffix" :+ hvm"label WHILE_END$suffix")
 
-object SymbolsTable:
-  def empty = SymbolsTable(List.empty, 0, 0, 0)
+      case G.Statement.Do(call) =>
+        // get rid of the expression, call for its side effects only
+        compileSubroutineCall(call).map(_ :+ hvm"pop temp 0")
 
-  sealed trait NamedEntry:
-    def name: String
+      case G.Statement.Return(value) =>
+        value
+          .fold(ResultT.of(Vector(hvm"push constant 0")))(compileExpression) // void return type
+          .map(_ :+ hvm"return")
 
-  enum Entry extends NamedEntry:
-    case Field(name: String)
-    case Static(name: String)
-    case Local(name: String)
-    // case Arg(name: String)
-    // case Class(name: String)
-    // case Subroutine(name: String)
+  private def compileExpression(expression: G.Expression)(using ctx: Context): ResultT[Vector[VMCode]] = ???
+
+  private def compileSubroutineCall(call: G.SubroutineCall)(using ctx: Context): ResultT[Vector[VMCode]] = ???
+
+  extension (underlying: SymbolsTable)
+    def symbolCmd(name: String, cmd: String): ResultT[VMCode] =
+      underlying
+        .getSymbol(name)
+        .fold(ResultT.error(Error.CompilationError(s"Symbol $name not found"))):
+          case (Field(_), index)  => ResultT.of(hvm"$cmd this $index")
+          case (Static(_), index) => ResultT.of(hvm"$cmd static $index")
+          case (Local(_), index)  => ResultT.of(hvm"$cmd local $index")
