@@ -5,6 +5,7 @@ import scala.util.chaining.*
 
 import SymbolsTable.Entry.*
 import java.util.concurrent.atomic.AtomicInteger
+import os.makeDir.all
 
 /** Compiles Jack AST to Hack VM code
   */
@@ -106,7 +107,6 @@ object CompilationEngine:
           hvm"push temp 0" :+ // push the `value` back to the stack
           hvm"pop that 0" // set the `that` at 0 to the `value`
 
-      // TODO: running counter for labels
       case G.Statement.If(condition, onTrue, onFalse) =>
         val suffix = ctx.mutableRunningLabelCounter.getAndIncrement
 
@@ -123,7 +123,8 @@ object CompilationEngine:
         ) ++ (
           if onFalse.isEmpty
           then onTrueCode :+ hvm"label IF_FALSE$suffix"
-          else (onTrueCode :+ hvm"goto IF_END$suffix") ++ (hvm"label IF_FALSE$suffix" +: onFalseCode :+ hvm"label IF_END$suffix")
+          else
+            (onTrueCode :+ hvm"goto IF_END$suffix") ++ (hvm"label IF_FALSE$suffix" +: onFalseCode :+ hvm"label IF_END$suffix")
         )
 
       case G.Statement.While(condition, body) =>
@@ -144,7 +145,56 @@ object CompilationEngine:
           .fold(ResultT.of(Vector(hvm"push constant 0")))(compileExpression) // void return type
           .map(_ :+ hvm"return")
 
-  private def compileExpression(expression: G.Expression)(using ctx: Context): ResultT[Vector[VMCode]] = ???
+  private def compileExpression(expression: G.Expression)(using ctx: Context): ResultT[Vector[VMCode]] =
+    // val G.Expression(term, rest*) = expression
+    val allTerms = expression.term +: expression.rest.map(_._2)
+    ???
+
+  private def compileTerm(term: G.Term)(using ctx: Context): ResultT[Vector[VMCode]] =
+    term match
+      case G.Term.IntConst(value) => ResultT.of(Vector(hvm"push constant $value"))
+      case G.Term.StringConst(value) =>
+        ResultT.of:
+          hvm"push constant ${value.length}" +:
+            hvm"call String.new 1" +:
+            value.zipWithIndex.toVector.flatMap:
+              case (char, i) => Vector(hvm"push constant ${char.toInt}", hvm"call String.appendChar 2")
+
+      case G.Term.KeywordConst(const) =>
+        ResultT.of:
+          const match
+            case "true"           => Vector(hvm"push constant 0", hvm"not") // push -1 to the top of the stack
+            case "false" | "null" => Vector(hvm"push constant 0")
+            case "this"           => Vector(hvm"push pointer 0")
+
+      case G.Term.VarName(name, maybeIndex) =>
+        maybeIndex match
+          case None => ctx.scope.symbolCmd(name, "push").map(Vector(_))
+          case Some(index) =>
+            for
+              pushBaseAddr <- ctx.scope.symbolCmd(name, "push")
+              pushIndex <- compileExpression(index)
+            yield pushBaseAddr +: pushIndex :+ hvm"add" :+ hvm"pop pointer 1" :+ hvm"push that 0"
+
+      case G.Term.Expr(expr) => compileExpression(expr)
+
+      case G.Term.Op(op, term) =>
+        compileTerm(term).map:
+          _ :+ (
+            op match
+              case '+' => hvm"add"
+              case '-' => hvm"sub"
+              case '*' => hvm"call Math.multiply 2"
+              case '/' => hvm"call Math.divide 2"
+              case '&' => hvm"and"
+              case '|' => hvm"or"
+              case '<' => hvm"lt"
+              case '>' => hvm"gt"
+              case '=' => hvm"eq"
+              case '~' => hvm"not"
+          )
+
+      case G.Term.Call(call) => compileSubroutineCall(call)
 
   private def compileSubroutineCall(call: G.SubroutineCall)(using ctx: Context): ResultT[Vector[VMCode]] = ???
 
