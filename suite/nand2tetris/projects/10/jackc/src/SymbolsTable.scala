@@ -22,9 +22,9 @@ final case class SymbolsTable(
       case _            => Map(entry.name -> (entry, index)) :: Nil
 
     entry match
-      case Entry.Field(_)  => copy(fieldsCount = fieldsCount + 1, scopes = nextScopes(fieldsCount))
-      case Entry.Static(_) => copy(staticsCount = staticsCount + 1, scopes = nextScopes(staticsCount))
-      case Entry.Local(_)  => copy(localsCount = localsCount + 1, scopes = nextScopes(localsCount))
+      case _: Entry.Field  => copy(fieldsCount = fieldsCount + 1, scopes = nextScopes(fieldsCount))
+      case _: Entry.Static => copy(staticsCount = staticsCount + 1, scopes = nextScopes(staticsCount))
+      case _: Entry.Local  => copy(localsCount = localsCount + 1, scopes = nextScopes(localsCount))
 
   def getSymbol(name: String): Option[(SymbolsTable.Entry, Int)] =
     scopes.flatMap(_.get(name)).headOption
@@ -34,8 +34,9 @@ object SymbolsTable:
 
   sealed trait NamedEntry:
     def name: String
+    def `type`: String
 
   enum Entry extends NamedEntry:
-    case Field(name: String)
-    case Static(name: String)
-    case Local(name: String)
+    case Field(name: String, `type`: String)
+    case Static(name: String, `type`: String)
+    case Local(name: String, `type`: String)

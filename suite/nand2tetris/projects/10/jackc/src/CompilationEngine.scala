@@ -6,6 +6,7 @@ import scala.util.chaining.*
 import SymbolsTable.Entry.*
 import java.util.concurrent.atomic.AtomicInteger
 import os.makeDir.all
+import com.sourcegraph.semanticdb_javac.Result
 
 /** Compiles Jack AST to Hack VM code
   */
@@ -29,8 +30,8 @@ object CompilationEngine:
         names.foldLeft(scope): (scope, name) =>
           scope.addSymbol:
             kind match
-              case "field"  => Field(name)
-              case "static" => Static(name)
+              case "field"  => Field(name, tpe)
+              case "static" => Static(name, tpe)
 
     given Context = Context(classScope, name, AtomicInteger(0))
 
@@ -47,14 +48,15 @@ object CompilationEngine:
 
     val (subroutineScope, nVars) = ctx.scope.pushScope
       .pipe: scope =>
-        if kind == "method" then scope.addSymbol(SymbolsTable.Entry.Local("this")) -> 1 else scope -> 0
+        if kind == "method" then scope.addSymbol(SymbolsTable.Entry.Local("this", tpe)) -> 1 else scope -> 0
       .pipe:
         paramsList.params.foldLeft(_):
-          case (scope, nVars) -> G.Parameter(_, name) => scope.addSymbol(SymbolsTable.Entry.Local(name)) -> (nVars + 1)
+          case (scope, nVars) -> G.Parameter(_, name) =>
+            scope.addSymbol(SymbolsTable.Entry.Local(name, tpe)) -> (nVars + 1)
       .pipe:
         varsDec.foldLeft(_):
           case (scope, nVars) -> G.VarDec(_, names) =>
-            names.view.map(SymbolsTable.Entry.Local(_)).foldLeft(scope)(_ addSymbol _) -> (nVars + names.size)
+            names.view.map(SymbolsTable.Entry.Local(_, tpe)).foldLeft(scope)(_ addSymbol _) -> (nVars + names.size)
 
     Vector(hvm"${ctx.className}.${name} $nVars").pipe: code =>
       kind match
@@ -91,13 +93,13 @@ object CompilationEngine:
       case G.Statement.Let(name, None, value) =>
         for
           exprValue <- compileExpression(value)
-          popValue <- ctx.scope.symbolCmd(name, "pop")
+          popValue <- ctx.scope.symbolCmdOrErr(name, "pop")
         yield exprValue :+ popValue
 
       // if there is index / offset - assume it's an array
       case G.Statement.Let(name, Some(offsetExpr), value) =>
         for
-          pushBaseAddr <- ctx.scope.symbolCmd(name, "push")
+          pushBaseAddr <- ctx.scope.symbolCmdOrErr(name, "push")
           pushOffset <- compileExpression(offsetExpr)
           pushValue <- compileExpression(value)
         yield (pushBaseAddr +: pushOffset :+ hvm"add") ++ // push `baseAddr + offset` to the top of the stack
@@ -146,9 +148,12 @@ object CompilationEngine:
           .map(_ :+ hvm"return")
 
   private def compileExpression(expression: G.Expression)(using ctx: Context): ResultT[Vector[VMCode]] =
-    // val G.Expression(term, rest*) = expression
-    val allTerms = expression.term +: expression.rest.map(_._2)
-    ???
+    expression.rest.foldLeft(compileTerm(expression.term)):
+      case (acc, (op, term)) =>
+        for
+          acc <- acc
+          term <- compileTerm(term)
+        yield acc ++ term :+ opCode(op)
 
   private def compileTerm(term: G.Term)(using ctx: Context): ResultT[Vector[VMCode]] =
     term match
@@ -169,40 +174,66 @@ object CompilationEngine:
 
       case G.Term.VarName(name, maybeIndex) =>
         maybeIndex match
-          case None => ctx.scope.symbolCmd(name, "push").map(Vector(_))
+          case None => ctx.scope.symbolCmdOrErr(name, "push").map(Vector(_))
           case Some(index) =>
             for
-              pushBaseAddr <- ctx.scope.symbolCmd(name, "push")
+              pushBaseAddr <- ctx.scope.symbolCmdOrErr(name, "push")
               pushIndex <- compileExpression(index)
             yield pushBaseAddr +: pushIndex :+ hvm"add" :+ hvm"pop pointer 1" :+ hvm"push that 0"
 
       case G.Term.Expr(expr) => compileExpression(expr)
 
-      case G.Term.Op(op, term) =>
-        compileTerm(term).map:
-          _ :+ (
-            op match
-              case '+' => hvm"add"
-              case '-' => hvm"sub"
-              case '*' => hvm"call Math.multiply 2"
-              case '/' => hvm"call Math.divide 2"
-              case '&' => hvm"and"
-              case '|' => hvm"or"
-              case '<' => hvm"lt"
-              case '>' => hvm"gt"
-              case '=' => hvm"eq"
-              case '~' => hvm"not"
-          )
+      case G.Term.Op(op, term) => compileTerm(term).map(_ :+ opCode(op))
 
       case G.Term.Call(call) => compileSubroutineCall(call)
 
-  private def compileSubroutineCall(call: G.SubroutineCall)(using ctx: Context): ResultT[Vector[VMCode]] = ???
+  private def opCode(op: Char): VMCode =
+    op match
+      case '+' => hvm"add"
+      case '-' => hvm"sub"
+      case '*' => hvm"call Math.multiply 2"
+      case '/' => hvm"call Math.divide 2"
+      case '&' => hvm"and"
+      case '|' => hvm"or"
+      case '<' => hvm"lt"
+      case '>' => hvm"gt"
+      case '=' => hvm"eq"
+      case '~' => hvm"not"
+
+  private def compileSubroutineCall(call: G.SubroutineCall)(using ctx: Context): ResultT[Vector[VMCode]] =
+    val G.SubroutineCall(maybeReceiver, subroutineName, args) = call
+    val nArgs = args.expressions.size
+
+    val pushReceiver = ResultT.of:
+      maybeReceiver match
+        case None | Some("this") => Vector(hvm"push pointer 0")
+        case Some(receiver)      => ctx.scope.symbolCmd(receiver, "push").toVector
+
+    // if there is a receiver then take the type from the symbol table or assume it's an external class
+    // if there is no receiver then assume it's a method of the current class
+    val typeName = maybeReceiver
+      .map(r => ctx.scope.getSymbol(r).fold(r)(_._1.`type`))
+      .getOrElse(ctx.className)
+
+    for
+      pushReceiver <- pushReceiver
+      pushArgs <- args.expressions.foldLeft(ResultT.of(Vector.empty[VMCode])):
+        case (acc, expr) =>
+          for
+            acc <- acc
+            expr <- compileExpression(expr)
+          yield acc ++ expr
+    yield pushReceiver ++ pushArgs :+ hvm"call $typeName.$subroutineName $nArgs"
 
   extension (underlying: SymbolsTable)
-    def symbolCmd(name: String, cmd: String): ResultT[VMCode] =
+    def symbolCmd(name: String, cmd: String): Option[VMCode] =
       underlying
         .getSymbol(name)
-        .fold(ResultT.error(Error.CompilationError(s"Symbol $name not found"))):
-          case (Field(_), index)  => ResultT.of(hvm"$cmd this $index")
-          case (Static(_), index) => ResultT.of(hvm"$cmd static $index")
-          case (Local(_), index)  => ResultT.of(hvm"$cmd local $index")
+        .collect:
+          // not found identifiers should be assumed subroutine names or class name
+          case (_: Field, index)  => hvm"$cmd this $index"
+          case (_: Static, index) => hvm"$cmd static $index"
+          case (_: Local, index)  => hvm"$cmd local $index"
+
+    def symbolCmdOrErr(name: String, cmd: String): ResultT[VMCode] =
+      symbolCmd(name, cmd).fold(ResultT.error(Error.CompilationError(s"Symbol $name not found")))(ResultT.of(_))
