@@ -265,7 +265,7 @@ object SyntaxAnalyzer:
     case T.Identifier(name) #:: T.Symbol('(') #:: rest =>
       for
         (exprLength, exprs) <- analyzeBetween('(', ')', analyzeExpressionList)(T.Symbol('(') #:: rest)
-        length = exprLength + 3 // + 3 for the name + ( + )
+        length = exprLength + 1 // + 1 for the name
       yield length -> G.SubroutineCall(None, name, exprs)
 
   private val analyzeSubroutineCallOrFail = analyzeSubroutineCall.orElse(unexpectedToken(_, "subroutine call"))

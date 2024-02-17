@@ -1,5 +1,6 @@
 //> using scala 3.3.1
 //> using toolkit latest
+//> using dep com.lihaoyi::pprint:0.7.0
 //> using option -Yexplicit-nulls
 
 package jackc

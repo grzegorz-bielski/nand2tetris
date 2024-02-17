@@ -92,13 +92,14 @@ object CompilationEngine:
         for
           acc <- acc
           code <- compileStatement(statement)
+          // _ = println("Compiled statement" -> code -> statements)
         yield acc ++ code
 
   private def compileStatement(statement: G.Statement)(using ctx: Context): ResultT[Vector[VMCode]] =
     // println(s"Compiling statement: $statement")
     statement match
       case G.Statement.Let(name, None, value) =>
-        println(s"Compiling let: $statement" -> ctx.scope)
+        // println(s"Compiling let: $statement" -> ctx.scope)
         for
           exprValue <- compileExpression(value)
           popValue <- ctx.scope.symbolCmdOrErr(name, "pop")
