@@ -47,13 +47,15 @@ object CompilationEngine:
 
     val (subroutineScope, nVars) = ctx.scope.pushScope
       .pipe: scope =>
-        if kind == "method" then scope.addSymbol(SymbolsTable.Entry.Local("this", ctx.className)) -> 1 else scope -> 0
+        if kind == "method"
+        then scope.addSymbol(SymbolsTable.Entry.Argument("this", ctx.className))
+        else scope
       .pipe:
         paramsList.params.foldLeft(_):
-          case (scope, nVars) -> G.Parameter(tpe, name) =>
-            scope.addSymbol(SymbolsTable.Entry.Argument(name, tpe)) -> 0
-      .pipe:
-        varsDec.foldLeft(_):
+          case scope -> G.Parameter(tpe, name) =>
+            scope.addSymbol(SymbolsTable.Entry.Argument(name, tpe))
+      .pipe: scope =>
+        varsDec.foldLeft((scope, 0)):
           case (scope, nVars) -> G.VarDec(tpe, names) =>
             names.view.map(SymbolsTable.Entry.Local(_, tpe)).foldLeft(scope)(_ addSymbol _) -> (nVars + names.size)
 
@@ -75,9 +77,12 @@ object CompilationEngine:
             consCode <- ResultT.of:
               // allocates memory of `fieldsCount` 16-bit words
               // and aligns the virtual memory segment `this` with the base address of newly allocated block
-              code :+ hvm"push constant ${ctx.scope.fieldsCount}" :+ hvm"call Memory.alloc 1" // built-in OS function that allocates heap memory
+              code :+
+                hvm"push constant ${ctx.scope.fieldsCount}" :+
+                hvm"call Memory.alloc 1" :+ // built-in OS function that allocates heap memory
+                hvm"pop pointer 0" // returns to the caller base address of the newly created object
             stmtsCode <- compileStatements(statements)
-          yield consCode ++ stmtsCode :+ hvm"pop pointer 0" // returns to the caller base address of the newly created object
+          yield consCode ++ stmtsCode
 
         case "function" => compileStatements(statements).map(code ++ _)
 
@@ -102,11 +107,11 @@ object CompilationEngine:
       // if there is index / offset - assume it's an array
       case G.Statement.Let(name, Some(offsetExpr), value) =>
         for
-          pushBaseAddr <- ctx.scope.symbolCmdOrErr(name, "push")
           pushOffset <- compileExpression(offsetExpr)
+          pushBaseAddr <- ctx.scope.symbolCmdOrErr(name, "push")
           pushValue <- compileExpression(value)
-        yield (pushBaseAddr +: pushOffset :+ hvm"add") ++ // push `baseAddr + offset` to the top of the stack
-          pushValue :+ // push exor value to the top of the stack
+        yield (pushOffset :+ pushBaseAddr :+ hvm"add") ++ // push `baseAddr + offset` to the top of the stack
+          pushValue :+ // push expr value to the top of the stack
           hvm"pop temp 0" :+ // safe `value` from expr to set in temp 0
           hvm"pop pointer 1" :+ // set the base address `that` to the address of the array[baseAddr + offset]
           hvm"push temp 0" :+ // push the `value` back to the stack
@@ -120,7 +125,7 @@ object CompilationEngine:
           onTrueCode <- compileStatements(onTrue)
           onFalseCode <- onFalse.fold(ResultT.of(Vector.empty))(compileStatements)
         yield (
-          conditionOf(conditionCode) :+
+          conditionCode :+
             hvm"if-goto IF_TRUE$suffix" :+
             hvm"goto IF_FALSE$suffix" :+
             hvm"label IF_TRUE$suffix"
@@ -137,7 +142,7 @@ object CompilationEngine:
         for
           conditionCode <- compileExpression(condition)
           bodyCode <- compileStatements(body)
-        yield (hvm"label WHILE_EXP$suffix" +: conditionOf(conditionCode) :+ hvm"if-goto WHILE_END$suffix") ++
+        yield (hvm"label WHILE_EXP$suffix" +: conditionCode :+ hvm"not" :+ hvm"if-goto WHILE_END$suffix") ++
           (bodyCode :+ hvm"goto WHILE_EXP$suffix" :+ hvm"label WHILE_END$suffix")
 
       case G.Statement.Do(call) =>
@@ -148,12 +153,6 @@ object CompilationEngine:
         value
           .fold(ResultT.of(Vector(hvm"push constant 0")))(compileExpression) // void return type
           .map(_ :+ hvm"return")
-
-  private def conditionOf(expr: Vector[VMCode]) =
-    expr.last match
-      case last if last == hvm"not" => expr
-      case last if last == hvm"eq"  => expr
-      case _                        => expr :+ hvm"not"
 
   private def compileExpression(expression: G.Expression)(using ctx: Context): ResultT[Vector[VMCode]] =
     expression.rest.foldLeft(compileTerm(expression.term)):
@@ -188,7 +187,7 @@ object CompilationEngine:
             for
               pushBaseAddr <- ctx.scope.symbolCmdOrErr(name, "push")
               pushIndex <- compileExpression(index)
-            yield pushBaseAddr +: pushIndex :+ hvm"add" :+ hvm"pop pointer 1" :+ hvm"push that 0"
+            yield pushIndex :+ pushBaseAddr :+ hvm"add" :+ hvm"pop pointer 1" :+ hvm"push that 0"
 
       case G.Term.Expr(expr) => compileExpression(expr)
 
@@ -216,7 +215,9 @@ object CompilationEngine:
 
   private def compileSubroutineCall(call: G.SubroutineCall)(using ctx: Context): ResultT[Vector[VMCode]] =
     val G.SubroutineCall(maybeReceiver, subroutineName, args) = call
-    val nArgs = args.expressions.size
+    // just a heuristic to determine if it's a method call as there is no linking nor defined compilation order for Jack
+    val isMethod = maybeReceiver.forall(ctx.scope.getSymbol(_).isDefined)
+    val nArgs = if isMethod then args.expressions.size + 1 else args.expressions.size
 
     val pushReceiver = ResultT.of:
       maybeReceiver match
