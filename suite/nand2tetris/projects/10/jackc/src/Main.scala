@@ -34,5 +34,5 @@ private def compileClassAt(source: os.Path): Unit =
     code => os.write.over(source / source.last.replace(".jack", ".vm").nn, code.toString)
   )
 
-private def compileClass(lines: Iterator[String]): Either[Error, Vector[VMCode]] = 
+private[jackc] def compileClass(lines: Iterator[String]): Either[Error, Vector[VMCode]] = 
   Tokenizer.tokenize(lines).flatMap(SyntaxAnalyzer.analyze).flatMap(CompilationEngine.compile)

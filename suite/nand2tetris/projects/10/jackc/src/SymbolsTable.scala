@@ -9,7 +9,8 @@ final case class SymbolsTable(
     scopes: List[Map[String, (SymbolsTable.Entry, Int)]],
     fieldsCount: Int,
     staticsCount: Int,
-    localsCount: Int
+    localsCount: Int,
+    argsCount: Int
 ):
   import SymbolsTable.*
 
@@ -25,12 +26,13 @@ final case class SymbolsTable(
       case _: Entry.Field  => copy(fieldsCount = fieldsCount + 1, scopes = nextScopes(fieldsCount))
       case _: Entry.Static => copy(staticsCount = staticsCount + 1, scopes = nextScopes(staticsCount))
       case _: Entry.Local  => copy(localsCount = localsCount + 1, scopes = nextScopes(localsCount))
+      case _: Entry.Argument => copy(argsCount = argsCount + 1, scopes = nextScopes(argsCount))
 
   def getSymbol(name: String): Option[(SymbolsTable.Entry, Int)] =
     scopes.flatMap(_.get(name)).headOption
 
 object SymbolsTable:
-  def empty = SymbolsTable(List.empty, 0, 0, 0)
+  def empty = SymbolsTable(List.empty, 0, 0, 0, 0)
 
   sealed trait NamedEntry:
     def name: String
@@ -40,3 +42,4 @@ object SymbolsTable:
     case Field(name: String, `type`: String)
     case Static(name: String, `type`: String)
     case Local(name: String, `type`: String)
+    case Argument(name: String, `type`: String)

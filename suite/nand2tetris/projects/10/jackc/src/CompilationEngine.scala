@@ -6,21 +6,20 @@ import scala.util.chaining.*
 import SymbolsTable.Entry.*
 import java.util.concurrent.atomic.AtomicInteger
 import os.makeDir.all
-import com.sourcegraph.semanticdb_javac.Result
+import VMCode.*
 
 /** Compiles Jack AST to Hack VM code
   */
 object CompilationEngine:
-  opaque type VMCode = String
-  object VMCode:
-    def apply(code: String): VMCode = code
-
-  extension (sc: StringContext) def hvm(args: Any*): VMCode = sc.s(args*).pipe(VMCode.apply)
-
-  // `mutableRunningLabelCounter` is the only peace of mutable state in the whole program
+  // `mutableRunningIfLabelCounter` and `mutableRunningWhileLabelCounter` are the only peace of mutable state in the whole program
   // it's used to generate unique labels for `if-goto` and `goto` vm commands
   // alternatively, we could use a `UUID`, or store the counter in the `Context` and pass it around using `StateT`
-  private final case class Context(scope: SymbolsTable, className: String, mutableRunningLabelCounter: AtomicInteger)
+  private final case class Context(
+      scope: SymbolsTable,
+      className: String,
+      mutableRunningIfLabelCounter: AtomicInteger,
+      mutableRunningWhileLabelCounter: AtomicInteger
+  )
 
   def compile(ast: Grammar.Class): Either[Error, Vector[VMCode]] =
     val G.Class(name, varsDec, subroutines) = ast
@@ -33,7 +32,7 @@ object CompilationEngine:
               case "field"  => Field(name, tpe)
               case "static" => Static(name, tpe)
 
-    given Context = Context(classScope, name, AtomicInteger(0))
+    given Context = Context(classScope, name, AtomicInteger(0), AtomicInteger(0))
 
     def compileSubroutines(subroutines: List[G.SubroutineDec], acc: Vector[VMCode]): ResultT[Vector[VMCode]] =
       subroutines match
@@ -43,22 +42,24 @@ object CompilationEngine:
     compileSubroutines(subroutines.toList, Vector.empty).run
 
   private def compileSubroutine(ast: G.SubroutineDec)(using ctx: Context): ResultT[Vector[VMCode]] =
-    val G.SubroutineDec(kind, tpe, name, paramsList, body) = ast
+    val G.SubroutineDec(kind, _, name, paramsList, body) = ast
     val G.SubroutineBody(varsDec, statements) = body
 
     val (subroutineScope, nVars) = ctx.scope.pushScope
       .pipe: scope =>
-        if kind == "method" then scope.addSymbol(SymbolsTable.Entry.Local("this", tpe)) -> 1 else scope -> 0
+        if kind == "method" then scope.addSymbol(SymbolsTable.Entry.Local("this", ctx.className)) -> 1 else scope -> 0
       .pipe:
         paramsList.params.foldLeft(_):
-          case (scope, nVars) -> G.Parameter(_, name) =>
-            scope.addSymbol(SymbolsTable.Entry.Local(name, tpe)) -> (nVars + 1)
+          case (scope, nVars) -> G.Parameter(tpe, name) =>
+            scope.addSymbol(SymbolsTable.Entry.Argument(name, tpe)) -> 0
       .pipe:
         varsDec.foldLeft(_):
-          case (scope, nVars) -> G.VarDec(_, names) =>
+          case (scope, nVars) -> G.VarDec(tpe, names) =>
             names.view.map(SymbolsTable.Entry.Local(_, tpe)).foldLeft(scope)(_ addSymbol _) -> (nVars + names.size)
 
-    Vector(hvm"${ctx.className}.${name} $nVars").pipe: code =>
+    given Context = ctx.copy(scope = subroutineScope)
+
+    Vector(hvm"function ${ctx.className}.${name} $nVars").pipe: code =>
       kind match
         case "method" =>
           for
@@ -78,7 +79,7 @@ object CompilationEngine:
             stmtsCode <- compileStatements(statements)
           yield consCode ++ stmtsCode :+ hvm"pop pointer 0" // returns to the caller base address of the newly created object
 
-        case "function" => compileStatements(statements)
+        case "function" => compileStatements(statements).map(code ++ _)
 
   private def compileStatements(statements: G.Statements)(using ctx: Context): ResultT[Vector[VMCode]] =
     statements.statements.foldLeft(ResultT.of(Vector.empty)):
@@ -89,8 +90,10 @@ object CompilationEngine:
         yield acc ++ code
 
   private def compileStatement(statement: G.Statement)(using ctx: Context): ResultT[Vector[VMCode]] =
+    // println(s"Compiling statement: $statement")
     statement match
       case G.Statement.Let(name, None, value) =>
+        println(s"Compiling let: $statement" -> ctx.scope)
         for
           exprValue <- compileExpression(value)
           popValue <- ctx.scope.symbolCmdOrErr(name, "pop")
@@ -110,15 +113,14 @@ object CompilationEngine:
           hvm"pop that 0" // set the `that` at 0 to the `value`
 
       case G.Statement.If(condition, onTrue, onFalse) =>
-        val suffix = ctx.mutableRunningLabelCounter.getAndIncrement
+        val suffix = ctx.mutableRunningIfLabelCounter.getAndIncrement
 
         for
           conditionCode <- compileExpression(condition)
           onTrueCode <- compileStatements(onTrue)
           onFalseCode <- onFalse.fold(ResultT.of(Vector.empty))(compileStatements)
         yield (
-          conditionCode :+
-            hvm"not" :+
+          conditionOf(conditionCode) :+
             hvm"if-goto IF_TRUE$suffix" :+
             hvm"goto IF_FALSE$suffix" :+
             hvm"label IF_TRUE$suffix"
@@ -130,12 +132,12 @@ object CompilationEngine:
         )
 
       case G.Statement.While(condition, body) =>
-        val suffix = ctx.mutableRunningLabelCounter.getAndIncrement
+        val suffix = ctx.mutableRunningWhileLabelCounter.getAndIncrement
 
         for
           conditionCode <- compileExpression(condition)
           bodyCode <- compileStatements(body)
-        yield (hvm"label WHILE_EXP$suffix" +: conditionCode :+ hvm"not" :+ hvm"if-goto WHILE_END$suffix") ++
+        yield (hvm"label WHILE_EXP$suffix" +: conditionOf(conditionCode) :+ hvm"if-goto WHILE_END$suffix") ++
           (bodyCode :+ hvm"goto WHILE_EXP$suffix" :+ hvm"label WHILE_END$suffix")
 
       case G.Statement.Do(call) =>
@@ -147,6 +149,12 @@ object CompilationEngine:
           .fold(ResultT.of(Vector(hvm"push constant 0")))(compileExpression) // void return type
           .map(_ :+ hvm"return")
 
+  private def conditionOf(expr: Vector[VMCode]) =
+    expr.last match
+      case last if last == hvm"not" => expr
+      case last if last == hvm"eq"  => expr
+      case _                        => expr :+ hvm"not"
+
   private def compileExpression(expression: G.Expression)(using ctx: Context): ResultT[Vector[VMCode]] =
     expression.rest.foldLeft(compileTerm(expression.term)):
       case (acc, (op, term)) =>
@@ -156,6 +164,7 @@ object CompilationEngine:
         yield acc ++ term :+ opCode(op)
 
   private def compileTerm(term: G.Term)(using ctx: Context): ResultT[Vector[VMCode]] =
+    // println(s"Compiling term: $term")
     term match
       case G.Term.IntConst(value) => ResultT.of(Vector(hvm"push constant $value"))
       case G.Term.StringConst(value) =>
@@ -183,9 +192,14 @@ object CompilationEngine:
 
       case G.Term.Expr(expr) => compileExpression(expr)
 
-      case G.Term.Op(op, term) => compileTerm(term).map(_ :+ opCode(op))
+      case G.Term.Op(op, term) => compileTerm(term).map(_ :+ unaryOpCode(op))
 
       case G.Term.Call(call) => compileSubroutineCall(call)
+
+  private def unaryOpCode(op: G.UnaryOp): VMCode =
+    op match
+      case '-' => hvm"neg"
+      case '~' => hvm"not"
 
   private def opCode(op: Char): VMCode =
     op match
@@ -231,9 +245,10 @@ object CompilationEngine:
         .getSymbol(name)
         .collect:
           // not found identifiers should be assumed subroutine names or class name
-          case (_: Field, index)  => hvm"$cmd this $index"
-          case (_: Static, index) => hvm"$cmd static $index"
-          case (_: Local, index)  => hvm"$cmd local $index"
+          case (_: Field, index)    => hvm"$cmd this $index"
+          case (_: Static, index)   => hvm"$cmd static $index"
+          case (_: Local, index)    => hvm"$cmd local $index"
+          case (_: Argument, index) => hvm"$cmd argument $index"
 
     def symbolCmdOrErr(name: String, cmd: String): ResultT[VMCode] =
-      symbolCmd(name, cmd).fold(ResultT.error(Error.CompilationError(s"Symbol $name not found")))(ResultT.of(_))
+      symbolCmd(name, cmd).fold(ResultT.error(Error.CompilationError(s"Symbol `$name` not found")))(ResultT.of(_))
