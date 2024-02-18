@@ -92,14 +92,11 @@ object CompilationEngine:
         for
           acc <- acc
           code <- compileStatement(statement)
-          // _ = println("Compiled statement" -> code -> statements)
         yield acc ++ code
 
   private def compileStatement(statement: G.Statement)(using ctx: Context): ResultT[Vector[VMCode]] =
-    // println(s"Compiling statement: $statement")
     statement match
       case G.Statement.Let(name, None, value) =>
-        // println(s"Compiling let: $statement" -> ctx.scope)
         for
           exprValue <- compileExpression(value)
           popValue <- ctx.scope.symbolCmdOrErr(name, "pop")
@@ -164,7 +161,6 @@ object CompilationEngine:
         yield acc ++ term :+ opCode(op)
 
   private def compileTerm(term: G.Term)(using ctx: Context): ResultT[Vector[VMCode]] =
-    // println(s"Compiling term: $term")
     term match
       case G.Term.IntConst(value) => ResultT.of(Vector(hvm"push constant $value"))
       case G.Term.StringConst(value) =>

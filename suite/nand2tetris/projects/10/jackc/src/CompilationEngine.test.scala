@@ -60,13 +60,11 @@ class CompilationEngineSpec extends JackcSpec:
       expectedAt(`11` / "Pong" / "PongGame.vm") // modified label counters
     )
 
-  // test("should compile `ComplexArrays` correctly"):
-  //   compileAt(`11` / "Pong" / "ComplexArrays.jack").foreach(println)
-    
-  //   assertEquals(
-  //     compileAt(`11` / "ComplexArrays" / "Main.jack"),
-  //     expectedAt(`11` / "ComplexArrays" / "Main.vm")
-  //   )
+  test("should compile `ComplexArrays` correctly"):
+    assertEquals(
+      compileAt(`11` / "ComplexArrays" / "Main.jack"),
+      expectedAt(`11` / "ComplexArrays" / "Main.vm")
+    )
 
 
   def compileAt(path: os.Path) =

@@ -10,8 +10,7 @@ import java.security.KeyStore.Entry
 // refactoring ideas:
 // keep state of consumed tokens somewhere - possibly in StateT, or in a separate class (Iterator?)
 
-/**
-  * Analyzes tokens stream and produces an AST.
+/** Analyzes tokens stream and produces an AST.
   */
 object SyntaxAnalyzer:
   def analyze(tokens: Iterator[Token]): Either[Error, Grammar.Class] =
@@ -21,6 +20,8 @@ object SyntaxAnalyzer:
       .map: err =>
         Error.AnalyzerError(err.getMessage.nn)
       .joinRight
+
+  private type Type = T.Keyword | T.Identifier
 
   private def analyzeClass(tokens: LazyList[Token]): ResultT[G.Class] =
     tokens match
@@ -38,7 +39,7 @@ object SyntaxAnalyzer:
     @tailrec
     def go(tokens: LazyList[Token], acc: (Int, Vector[G.ClassVarDec])): ResultT[(Int, Vector[G.ClassVarDec])] =
       tokens match
-        case T.Keyword(kind: G.ClassVarKind) #:: (tpe: (T.Keyword | T.Identifier)) #:: rest =>
+        case T.Keyword(kind: G.ClassVarKind) #:: (tpe: Type) #:: rest =>
           val (length, names) = collectVars(rest)
           val nextLength = length + 2 // kind + tpe
           go(tokens.drop(nextLength), (acc._1 + nextLength, acc._2 :+ G.ClassVarDec(kind, typeValue(tpe), names)))
@@ -49,7 +50,7 @@ object SyntaxAnalyzer:
     def go(tokens: LazyList[Token], acc: (Int, Vector[G.SubroutineDec])): ResultT[(Int, Vector[G.SubroutineDec])] =
       tokens match
         // format: off
-        case T.Keyword(kind: G.SubroutineKind) #:: (tpe: (T.Keyword | T.Identifier)) #:: T.Identifier(name) #:: T.Symbol('(') #:: rest =>
+        case T.Keyword(kind: G.SubroutineKind) #:: (tpe: Type) #:: T.Identifier(name) #:: T.Symbol('(') #:: rest =>
         // format: on
           for
             (paramsLength, params) <- analyzeParameterList(rest)
@@ -69,9 +70,12 @@ object SyntaxAnalyzer:
     val params = line
       .grouped(3)
       .foldLeft(Vector.empty[G.Parameter]):
-        case acc -> T.Keyword(tpe) #:: T.Identifier(name) #:: T.Symbol(',') #:: _ => acc :+ G.Parameter(tpe, name)
-        case acc -> T.Keyword(tpe) #:: T.Identifier(name) #:: _                   => acc :+ G.Parameter(tpe, name)
-        case acc -> _                                                             => acc
+        case acc -> (tpe: Type) #:: T.Identifier(name) #:: T.Symbol(',') #:: _ =>
+          acc :+ G.Parameter(typeValue(tpe), name)
+        case acc -> (tpe: Type) #:: T.Identifier(name) #:: _ =>
+          acc :+ G.Parameter(typeValue(tpe), name)
+        case acc -> _ =>
+          acc
 
     val length = line.length + 1 // + 1 for the `)
 
@@ -137,15 +141,15 @@ object SyntaxAnalyzer:
           length -> G.Statement.Let(name, None, expression)
 
       case T.Keyword("let") #:: T.Identifier(name) #:: T.Symbol('[') #:: rest =>
-        val exprTokens = rest.takeWhile(_ != T.Symbol(']'))
         for
-          (indexExprLength, indexExpr) <- analyzeExpression(exprTokens)
-          afterIndexExpr = rest.drop(exprTokens.length + 1)
+          (_indexExprLength, indexExpr) <- analyzeBetween('[', ']', analyzeExpression)(T.Symbol('[') #:: rest)
+          indexExprLength = _indexExprLength - 1 // - 1 for the [
+          afterIndexExpr = rest.drop(indexExprLength)
           _ <- ResultT.matches("analyzeLet", afterIndexExpr):
             case T.Symbol('=') #:: _ => ()
           beforeAssignment = afterIndexExpr.drop(1).takeWhile(_ != T.Symbol(';'))
           (exprLength, expression) <- analyzeExpression(beforeAssignment)
-          length = indexExprLength + exprLength + 6 // let + , + = + [ + ] + ;
+          length = _indexExprLength + exprLength + 4 // `let` + `,` + `=` + `;`
         yield length -> G.Statement.Let(name, Some(indexExpr), expression)
 
   private def analyzeIf(tokens: LazyList[Token]): ResultT[(Int, G.Statement.If)] =
@@ -222,15 +226,12 @@ object SyntaxAnalyzer:
       case T.StringConst(value) #:: _               => ResultT.of(1 -> G.Term.StringConst(value))
       case T.Keyword(name: G.KeywordConstant) #:: _ => ResultT.of(1 -> G.Term.KeywordConst(name))
       case T.Identifier(name) #:: T.Symbol('[') #:: rest =>
-        val exprTokens = rest.takeWhile(_ != T.Symbol(']')) // TODO: analyzeBetween
         for
-          (exprLength, expr) <- analyzeExpression(exprTokens)
-          length = exprLength + 3 // + 3 for the name + [ + ]
+          (exprLength, expr) <- analyzeBetween('[', ']', analyzeExpression)(T.Symbol('[') #:: rest)
+          length = exprLength + 1 // + 1 for the name
         yield length -> G.Term.VarName(name, Some(expr))
       case T.Symbol('(') #:: rest =>
-        for
-          (exprLength, expr) <- analyzeExpression(rest) // TODO: analyzeBetween
-          length = exprLength + 2 // + 2 for the ( + )
+        for (length, expr) <- analyzeBetween('(', ')', analyzeExpression)(T.Symbol('(') #:: rest)
         yield length -> G.Term.Expr(expr)
       case T.Symbol(op: G.UnaryOp) #:: rest =>
         for
@@ -311,7 +312,7 @@ object SyntaxAnalyzer:
       length = resLength + 2 // + 2 for the from + to
     yield length -> res
 
-  private def typeValue(tpe: T.Keyword | T.Identifier) =
+  private def typeValue(tpe: Type) =
     tpe match
       case T.Keyword(value)    => value
       case T.Identifier(value) => value

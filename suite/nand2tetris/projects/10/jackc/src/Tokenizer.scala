@@ -11,7 +11,7 @@ import XMLEncoder.*
 object Tokenizer:
   type Result = Either[Error, Iterator[Token]]
 
-  def tokenize(iterator: Iterator[String]): Result = 
+  def tokenize(iterator: Iterator[String]): Result =
     Try(unsafeTokenize(iterator)).asTokenizerErrors
 
   def unsafeTokenize(iterator: Iterator[String]): Iterator[Token] = iterator.stripComments.tokenize
@@ -88,8 +88,11 @@ object Tokenizer:
 
       val rest = Token.allPossibleKeywords.foldLeft(chunk.dropWhile(_.isWhitespace)): (acc, keyword) =>
         if acc.startsWith(keyword) then
-          builder.addOne(Token.Keyword(keyword))
-          acc.drop(keyword.length)
+          val next = acc.drop(keyword.length)
+          if next.head.isLetterOrDigit then acc
+          else
+            builder.addOne(Token.Keyword(keyword))
+            next
         else acc
 
       builder.result() -> rest
@@ -134,4 +137,5 @@ object Tokenizer:
       (underlying._1 ++ res._1, res._2)
 
   extension [A](underlying: Try[A])
-    def asTokenizerErrors: Either[Error, A] = underlying.toEither.left.map(err => Error.TokenizerError(err.getMessage.nn))
+    def asTokenizerErrors: Either[Error, A] =
+      underlying.toEither.left.map(err => Error.TokenizerError(err.getMessage.nn))
