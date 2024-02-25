@@ -5,7 +5,7 @@
 
 /**
  * A library of functions for writing text on the screen.
- * The Hack physical screen consists of 512 rows of 256 pixels each.
+ * The Hack physical screen consists of 256 rows of 512 pixels each.
  * The library uses a fixed font, in which each character is displayed 
  * within a frame which is 11 pixels high (including 1 pixel for inter-line 
  * spacing) and 8 pixels wide (including 2 pixels for inter-character spacing).
@@ -16,11 +16,26 @@
  */
 class Output {
 
-    // Character map for displaying characters
+    /** 2 dimensional array of character bitmaps: 
+    
+        Map(
+            charIndex -> Array(
+                63 // binary representation of the `63` codes the character's 1st 8 pixel row
+                12,
+                ...
+            )
+        )
+    */
     static Array charMaps; 
+    static Array SCREEN; // static pointer to the screen memory map
+    static int cursorRow, cursorCol; 
 
     /** Initializes the screen, and locates the cursor at the screen's top-left. */
     function void init() {
+        let SCREEN = 16384;
+        do Output.initMap();
+        do Output.moveCursor(0,0);
+        return;
     }
 
     // Initializes the character map array
@@ -71,7 +86,7 @@ class Output {
         do Output.create(64,30,51,51,59,59,59,27,3,30,0,0);  // @
         do Output.create(63,30,51,51,24,12,12,0,12,12,0,0);  // ?
 
-        do Output.create(65,0,0,0,0,0,0,0,0,0,0,0);          // A ** TO BE FILLED **
+        do Output.create(65,24,36,66,66,126,66,66,66,66,0,0); // A ** TO BE FILLED **
         do Output.create(66,31,51,51,51,31,51,51,51,31,0,0); // B
         do Output.create(67,28,54,35,3,3,3,35,54,28,0,0);    // C
         do Output.create(68,15,27,51,51,51,51,51,27,15,0,0); // D
@@ -137,15 +152,15 @@ class Output {
         do Output.create(125,7,12,12,12,56,12,12,12,7,0,0);    // }
         do Output.create(126,38,45,25,0,0,0,0,0,0,0,0);        // ~
 
-	return;
+	    return;
     }
 
     // Creates the character map array of the given character index, using the given values.
     function void create(int index, int a, int b, int c, int d, int e,
                          int f, int g, int h, int i, int j, int k) {
-	var Array map;
+	    var Array map;
 
-	let map = Array.new(11);
+	    let map = Array.new(11);
         let charMaps[index] = map;
 
         let map[0] = a;
@@ -176,28 +191,125 @@ class Output {
     /** Moves the cursor to the j-th column of the i-th row,
      *  and erases the character displayed there. */
     function void moveCursor(int i, int j) {
+        let cursorRow = i;
+        let cursorCol = j;
+        return;
     }
 
     /** Displays the given character at the cursor location,
      *  and advances the cursor one column forward. */
     function void printChar(char c) {
+        var Array bitMap;
+        var int bitMapRow, currentIndex, shiftedMap, bitMask;
+
+        let bitMap = Output.getMap(c); // 11 elements array of row bitmaps
+
+        let bitMapRow = 0;
+        while(bitMapRow < 11) {
+            // 32 - line size in 16bit words
+            // 11 - rows per char
+            // 2 - first row of 2 8-bit width characters is fitting inside 16-bit word
+            let currentIndex = ((32 * (bitMapRow + (cursorRow * 11))) + (cursorCol / 2));
+
+            if (Output.isEven(cursorCol + 1)) {
+                let shiftedMap = bitMap[bitMapRow] * 256; // leftShift, 8 ** 2 (shift underlying representation right)
+                let bitMask = 255;  // 1111111100000000
+            } else {
+                let shiftedMap = bitMap[bitMapRow];
+                let bitMask = ~255; // 0000000011111111
+            }
+
+            let SCREEN[currentIndex] = (SCREEN[currentIndex] & bitMask) | shiftedMap;
+
+            let bitMapRow = bitMapRow + 1;
+        }
+
+        // move cursor to the next column or to the next line
+        if (cursorCol = 63) {
+            do Output.println();
+        } else {
+            let cursorCol = cursorCol + 1;
+        }
+
+        return;
     }
 
     /** displays the given string starting at the cursor location,
      *  and advances the cursor appropriately. */
     function void printString(String s) {
+        var int i, length;
+
+        let length = s.length();
+        let i = 0;
+        while(i < length) {
+            do Output.printChar(s.charAt(i));
+            let i = i + 1;
+        }
+
+        return;
     }
 
     /** Displays the given integer starting at the cursor location,
      *  and advances the cursor appropriately. */
     function void printInt(int i) {
+        var String s;
+        let s = String.new(16); 
+        do s.setInt(i);
+        do Output.printString(s);
+        do s.dispose(); // gc
+        return;
     }
 
     /** Advances the cursor to the beginning of the next line. */
     function void println() {
+        if (cursorRow < 22) {
+            let cursorRow = cursorRow + 1;
+        } else { // reset back to (0, 0)
+            let cursorRow = 0; 
+
+            // the test do not expect clearing the screen
+            // do Output.resetScreen();
+        }
+
+        let cursorCol = 0;
+
+        return;
     }
 
     /** Moves the cursor one column back. */
     function void backSpace() {
+        if(cursorCol = 0) {
+            if (cursorRow > 0) {
+                let cursorCol = 63;
+                let cursorRow = cursorRow - 1;
+            } 
+            // else do nothing
+        }
+        else {
+            let cursorCol = cursorCol - 1;
+        }
+        
+        return;
+    }
+
+    function void resetScreen() {
+        var int i;
+
+        let i = 0;
+        while (i < 8192) { // 256 rows * 32 pixels/row = 8192 pixels
+            let SCREEN[i] = 0; // white pixel
+            let i = i + 1;
+        }
+
+        return;
+    }
+
+    function boolean isEven(int n) {
+        // see: https://www.geeksforgeeks.org/check-if-a-number-is-odd-or-even-using-bitwise-operators/
+        if ((n & 1) = 0) {
+            return true;
+        } else {
+            return false;
+        }
     }
 }
