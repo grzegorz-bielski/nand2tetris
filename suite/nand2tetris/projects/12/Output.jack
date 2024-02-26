@@ -219,6 +219,7 @@ class Output {
                 let bitMask = ~255; // 0000000011111111
             }
 
+            // take pixels from the other, not modified side and merge it with new pixels
             let SCREEN[currentIndex] = (SCREEN[currentIndex] & bitMask) | shiftedMap;
 
             let bitMapRow = bitMapRow + 1;
@@ -268,7 +269,7 @@ class Output {
             let cursorRow = 0; 
 
             // the test do not expect clearing the screen
-            // do Output.resetScreen();
+            // do Screen.clearScreen();
         }
 
         let cursorCol = 0;
@@ -289,18 +290,6 @@ class Output {
             let cursorCol = cursorCol - 1;
         }
         
-        return;
-    }
-
-    function void resetScreen() {
-        var int i;
-
-        let i = 0;
-        while (i < 8192) { // 256 rows * 32 pixels/row = 8192 pixels
-            let SCREEN[i] = 0; // white pixel
-            let i = i + 1;
-        }
-
         return;
     }
 
