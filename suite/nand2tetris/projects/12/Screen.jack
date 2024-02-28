@@ -17,7 +17,7 @@ class Screen {
 
     /** Initializes the Screen. */
     function void init() {
-        let currentColor = false;
+        let currentColor = true;
         let SCREEN = 16384;
 
         return;
@@ -46,15 +46,30 @@ class Screen {
 
     /** Draws the (x,y) pixel, using the current color. */
     function void drawPixel(int x, int y) {
-        var int chunk, chunkAddress, mask, i;
+        var int chunk, chunkAddress, mask, i, xClamped;
 
-        let chunkAddress = SCREEN + (x * 32);
+        let chunkAddress = SCREEN + (y * 32) + (x / 16);
         let chunk = Memory.peek(chunkAddress);
+
+        // ensures that x is between 0 and 15, so you're only setting bits within a 16-bit word. 
+        //   1010  (x)
+        // & 1111  (15)
+        // = 1010  (n & 15 = 10)
+
+        //   1010  (x)
+        // & 1111  (15)
+        // = 1010  (x & 15 = 10)
+
+        //   11111  (x)
+        // & 01111  (15)
+        // = 01111  (x & 15 = 15)
+
+        let xClamped = x & 15; 
 
         // inefficient, but there is no << operator support in Hack VM
         let mask = 1;
         let i = 0;
-        while (i < y) {
+        while (i < xClamped) {
             let mask = mask * 2;
             let i = i + 1;
         }
@@ -86,25 +101,41 @@ class Screen {
 
     /** Draws a line from pixel (x1,y1) to pixel (x2,y2), using the current color. */
     function void drawLine(int x1, int y1, int x2, int y2) {
-        var int x, y, a, b, dx, dy, diff;
+        // Bresenham's line
+        var int dx, dy, sx, sy, err, e2;
 
-        let a = 0;
-        let b = 0;
-        let diff = 0;
-        let x = x1;
-        let y = y1;
-        let dx = x2 - x1;
-        let dy = y2 - y1;
+        let dx = Math.abs(x2 - x1);
+        let dy = Math.abs(y2 - y1);
+        let err = dx - dy;
 
-        while (((a < dx) | (a = dx)) & ((b > dx) | (b = dx))) {
-            do Screen.drawPixel(x + a, y + b);
+        // x direction
+        if (x1 < x2) {
+            let sx = 1; // moves right
+        } else {
+            let sx = -1; // moves left
+        }
 
-            if (diff < 0) {
-                let a = a + 1;
-                let diff = diff + dx;
-            } else {
-                let b = b + 1;
-                let diff = diff - dx;
+        // y direction
+        if (y1 < y2) {
+            let sy = 1; // moves up
+        } else {
+            let sy = -1; // moves down
+        }
+
+        // ~( (x1 = x2) & (y1 = y2))
+
+        while(~( (x1 = x2) & (y1 = y2))) {
+            do Screen.drawPixel(x1,y1);
+            let e2 = 2 * err;
+
+            if (e2 > -dy) {
+                let err = err - dy;
+                let x1 = x1 + sx;
+            }
+
+            if (e2 < dx) {
+                let err = err + dx;
+                let y1 = y1 + sy;
             }
         }
 
