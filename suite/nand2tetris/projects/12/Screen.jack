@@ -95,18 +95,20 @@ class Screen {
             do Memory.poke(chunkAddress, chunk & ~mask);
         }
 
-
         return;
     }
 
     /** Draws a line from pixel (x1,y1) to pixel (x2,y2), using the current color. */
     function void drawLine(int x1, int y1, int x2, int y2) {
-        // Bresenham's line
+        // Bresenham's line algorithm
+
+        // There could be further optimizations for straight lines drawing, but those were ignored
+
         var int dx, dy, sx, sy, err, e2;
 
         let dx = Math.abs(x2 - x1);
-        let dy = Math.abs(y2 - y1);
-        let err = dx - dy;
+        let dy = -Math.abs(y2 - y1);
+        let err = dx + dy;
 
         // x direction
         if (x1 < x2) {
@@ -122,18 +124,20 @@ class Screen {
             let sy = -1; // moves down
         }
 
-        // ~( (x1 = x2) & (y1 = y2))
-
         while(~( (x1 = x2) & (y1 = y2))) {
             do Screen.drawPixel(x1,y1);
+            // eliminated floating point arithmetic by incrementing err/diff by 2
+            // instead of dividing dx/dy by 2
             let e2 = 2 * err;
 
-            if (e2 > -dy) {
-                let err = err - dy;
+            // overshooting the ideal line, go right/left
+            if ((e2 > dy) | (e2 = dy)) {
+                let err = err + dy;
                 let x1 = x1 + sx;
             }
 
-            if (e2 < dx) {
+            // udnershooting the ideal line, go up/down
+            if ((e2 < dx) | (e2 = dx)) {
                 let err = err + dx;
                 let y1 = y1 + sy;
             }
@@ -159,6 +163,22 @@ class Screen {
 
     /** Draws a filled circle of radius r<=181 around (x,y), using the current color. */
     function void drawCircle(int x, int y, int r) {
+        var int dy, sqrtPart;
+
+        let dy = -r;
+        while (dy < r) {
+            let sqrtPart = Math.sqrt((r * r) - (dy * dy));
+            
+            do Screen.drawLine(
+                x - sqrtPart,
+                y + dy,
+                x + sqrtPart,
+                y + dy
+            );
+
+            let dy = dy + 1;
+        }
+
         return;
     }
 }
