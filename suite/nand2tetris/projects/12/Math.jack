@@ -15,6 +15,27 @@ class Math {
 
     // Initializes the Math library.
     function void init() {
+        let n = 16; // Hack word size & Int size
+
+        let powersOfTwo = Array.new(n);
+        let powersOfTwo[0] = 1;
+        let powersOfTwo[1] = 2;
+        let powersOfTwo[2] = 4;
+        let powersOfTwo[3] = 8;
+        let powersOfTwo[4] = 16;
+        let powersOfTwo[5] = 32;
+        let powersOfTwo[6] = 64;
+        let powersOfTwo[7] = 128;
+        let powersOfTwo[8] = 256;
+        let powersOfTwo[9] = 512;
+        let powersOfTwo[10] = 1024;
+        let powersOfTwo[11] = 2048;
+        let powersOfTwo[12] = 4096;
+        let powersOfTwo[13] = 8192;
+        let powersOfTwo[14] = 16384;
+        let powersOfTwo[15] = 16384 + 16384; // 32768 throws `Integer constant too big`
+
+        return;
     }
 
     /** Returns the product of x and y. 
@@ -23,6 +44,21 @@ class Math {
      *  Thus, in Jack, x * y and Math.multiply(x,y) return the same value.
      */
     function int multiply(int x, int y) {
+        var int sum, j, shiftedx;
+
+        let sum = 0;
+        let shiftedx = x;
+        let j = 0;
+        while (j < n) {
+            if (Math.iThBit(y, j)) {
+                let sum = sum + shiftedx;
+            } 
+            // 2 * shiftedx will cause a stack overflow
+            let shiftedx = shiftedx + shiftedx;
+            let j = j + 1;
+        }
+
+        return sum;
     }
 
     /** Returns the integer part of x / y.
@@ -31,25 +67,87 @@ class Math {
      *  Thus, x/y and Math.divide(x,y) return the same value.
      */
     function int divide(int x, int y) {
+        var int q, res, factor;
+        
+        if ((x < 0) = (y < 0)) {
+            let factor = 1;
+        } else {
+            let factor = -1;
+        }
+
+        let x = Math.abs(x);
+        let y = Math.abs(y);
+
+        if( y > x ) {
+            return 0;
+        }
+
+        let q = Math.divide(x, 2 * y);
+        if((x - (2 * q * y)) < y) {
+            let res = 2 * q;
+        }
+        else {
+            let res = (2 * q) + 1;
+        }
+        
+        return factor * res;
     }
 
     /** Returns the integer part of the square root of x.
     */
     function int sqrt(int x) {
+        var int y, i, expr, expr2;
+
+        let y = 0;
+        let i = (n / 2) - 1;
+
+        while ((i > 0) | (i = 0)) {
+            let expr = y + powersOfTwo[i];
+            let expr2 = expr * expr;
+
+            // expr2 can overflow
+            if (((expr2 < x) | (expr2 = x)) & (expr2 > 0)) {
+                let y = expr;
+            }
+
+            let i = i - 1;
+        }
+
+        return y;
     }
 
     /** Returns the greater value.
     */
     function int max(int a, int b) {
+        if (a > b) {
+            return a;
+        } else {
+            return b;
+        }
     }
 
     /** Returns the smaller value.
     */
     function int min(int a, int b) {
+      if (a < b) {
+            return a;
+        } else {
+            return b;
+        }
     }
 
     /** Returns the absolute value of x
     */
     function int abs(int x) {
+        if (x < 0) {
+            return -x;
+        } else {
+            return x;
+        }
+    }
+
+    function boolean iThBit(int num, int i) {
+        // could be `num << n` with shifts
+        return ~((num & powersOfTwo[i]) = 0);
     }
 }
