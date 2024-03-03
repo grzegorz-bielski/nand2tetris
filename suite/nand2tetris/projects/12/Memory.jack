@@ -3,6 +3,9 @@
 // by Nisan and Schocken, MIT Press.
 // File name: projects/12/Memory.jack
 
+// It passes provided `MemoryTest`, but the implementation still might have some issues
+// it would need to be checked register by register in the VM emulator
+
 /**
  * This library provides two services: direct access to the computer's main
  * memory (RAM), and allocation and recycling of memory blocks. The Hack RAM
