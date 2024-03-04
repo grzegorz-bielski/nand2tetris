@@ -1,11 +1,16 @@
 # nand2tetris
 
-My solutions to the [nand2tetris](https://www.nand2tetris.org/) course exercises.
+My complete solutions to the [nand2tetris](https://www.nand2tetris.org/) course exercises.
+
+It includes three Scala projects available as scala-cli [VS Code workspace](./nand2tetris.code-workspace); Hack assembler, Hack VM and Jack compiler.
+
+The rest is in native Hack platform code; HDL, ASM, VM bytecode and Jack language.
 
 ## Setup
 
 1. Download tools from [here](https://www.nand2tetris.org/software) and put them in `suite/nand2tetris/tools`. 
-2. Install [scala-cli](https://scala-cli.virtuslab.org/), [Just](https://github.com/casey/just) and maybe [Nand2Tetris IDE](https://marketplace.visualstudio.com/items?itemName=AvivYaish.nand-ide) VS Code extension.
+2. Install [scala-cli](https://scala-cli.virtuslab.org/)
+3. Optionally you can also install [Just](https://github.com/casey/just) and maybe [Nand2Tetris IDE](https://marketplace.visualstudio.com/items?itemName=AvivYaish.nand-ide) VS Code extension.
 
 
 ## Solutions
